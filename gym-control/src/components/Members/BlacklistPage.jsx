@@ -281,14 +281,54 @@ const BlacklistPage = () => {
                     }`}
                   >
                     <div className="flex items-start gap-4">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-                        active ? 'bg-red-500/10' : 'bg-[#00ff88]/10'
+                      <div className={`relative w-16 h-16 rounded-xl overflow-hidden flex items-center justify-center shrink-0 border ${
+                        active
+                          ? 'bg-red-500/10 border-red-500/20'
+                          : 'bg-[#00ff88]/10 border-[#00ff88]/20'
                       }`}>
-                        {active ? (
-                          <Ban size={22} className="text-red-400" />
-                        ) : (
-                          <CheckCircle2 size={22} className="text-[#00ff88]" />
-                        )}
+
+                        {
+                          record.profilePhoto ||
+                          record.lastMemberSnapshot?.profilePhoto
+                            ? (
+
+                              <img
+                                src={
+                                  record.profilePhoto ||
+                                  record.lastMemberSnapshot?.profilePhoto
+                                }
+                                alt={
+                                  record.fullName ||
+                                  'Persona en lista negra'
+                                }
+                                className="w-full h-full object-cover"
+                              />
+
+                            )
+                            : (
+                              active
+                                ? (
+                                  <Ban size={24} className="text-red-400" />
+                                )
+                                : (
+                                  <CheckCircle2 size={24} className="text-[#00ff88]" />
+                                )
+                            )
+                        }
+
+
+                        <div className={`absolute right-1 bottom-1 w-5 h-5 rounded-full flex items-center justify-center border border-black ${
+                          active
+                            ? 'bg-red-500'
+                            : 'bg-[#00ff88]'
+                        }`}>
+                          {
+                            active
+                              ? <Ban size={11} className="text-white" />
+                              : <CheckCircle2 size={11} className="text-black" />
+                          }
+                        </div>
+
                       </div>
 
                       <div className="min-w-0 flex-1">
@@ -331,6 +371,7 @@ const BlacklistPage = () => {
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 text-xs">
+
                           <div>
                             <p className="text-gray-600">Registrado en lista</p>
                             <p className="text-gray-300 mt-0.5">{formatDateTime(record.addedAt)}</p>
@@ -338,9 +379,48 @@ const BlacklistPage = () => {
 
                           <div>
                             <p className="text-gray-600">Registrado por</p>
-                            <p className="text-gray-300 mt-0.5">{record.addedBy?.name || 'Sistema'}</p>
+                            <p className="text-gray-300 mt-0.5">
+                              {record.addedBy?.name || 'Sistema'}
+                              {record.addedBy?.role ? ` · ${record.addedBy.role}` : ''}
+                            </p>
                           </div>
+
+                          <div>
+                            <p className="text-gray-600">Origen</p>
+                            <p className="text-gray-300 mt-0.5 capitalize">
+                              {
+                                record.source === 'deleted'
+                                  ? 'Miembro eliminado'
+                                  : record.source === 'blocked'
+                                    ? 'Bloqueo administrativo'
+                                    : record.source || 'Administrativo'
+                              }
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-gray-600">Última actualización</p>
+                            <p className="text-gray-300 mt-0.5">{formatDateTime(record.updatedAt || record.addedAt)}</p>
+                          </div>
+
                         </div>
+
+
+                        {
+                          record.notes &&
+                          (
+
+                            <div className="mt-4 rounded-xl bg-[#0d0d0d] border border-[#1f1f1f] p-4">
+                              <p className="text-gray-500 text-[11px] uppercase tracking-wider">
+                                Notas administrativas
+                              </p>
+                              <p className="text-gray-300 text-sm mt-1">
+                                {record.notes}
+                              </p>
+                            </div>
+
+                          )
+                        }
 
                         {record.clearedAt && (
                           <div className="mt-4 text-xs text-[#00ff88]">

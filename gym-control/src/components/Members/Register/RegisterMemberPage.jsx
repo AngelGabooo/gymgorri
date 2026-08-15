@@ -76,6 +76,166 @@ const RegisterMemberPage = () => {
 
   const [errors, setErrors] = useState({});
 
+
+  // ======================================================
+  // FECHA DE REGISTRO
+  // ======================================================
+
+  const [registrationDateMode, setRegistrationDateMode] =
+    useState('automatic');
+
+  const [manualRegistrationDate, setManualRegistrationDate] =
+    useState('');
+
+
+  const getTodayInputValue = () => {
+
+    const now =
+      new Date();
+
+    const year =
+      now.getFullYear();
+
+    const month =
+      String(
+        now.getMonth() + 1
+      ).padStart(
+        2,
+        '0'
+      );
+
+    const day =
+      String(
+        now.getDate()
+      ).padStart(
+        2,
+        '0'
+      );
+
+    return `${year}-${month}-${day}`;
+
+  };
+
+
+  const formatRegistrationDate = (
+    value
+  ) => {
+
+    if (!value) {
+      return 'Selecciona una fecha';
+    }
+
+    const date =
+      typeof value === 'string' &&
+      /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? new Date(
+            `${value}T12:00:00`
+          )
+        : new Date(
+            value
+          );
+
+    if (
+      Number.isNaN(
+        date.getTime()
+      )
+    ) {
+      return 'Fecha no válida';
+    }
+
+    const months = [
+      'Ene',
+      'Feb',
+      'Mar',
+      'Abr',
+      'May',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dic'
+    ];
+
+    const day =
+      String(
+        date.getDate()
+      ).padStart(
+        2,
+        '0'
+      );
+
+    const month =
+      months[
+        date.getMonth()
+      ];
+
+    const year =
+      date.getFullYear();
+
+    return `${day} ${month} ${year}`;
+
+  };
+
+
+  const selectedRegistrationDate =
+    registrationDateMode === 'manual'
+      ? manualRegistrationDate
+      : getTodayInputValue();
+
+
+  const registrationDate =
+    formatRegistrationDate(
+      selectedRegistrationDate
+    );
+
+
+  const getRegistrationDateISO =
+    () => {
+
+      if (
+        registrationDateMode ===
+        'automatic'
+      ) {
+
+        return new Date()
+          .toISOString();
+
+      }
+
+
+      if (
+        !manualRegistrationDate
+      ) {
+
+        return null;
+
+      }
+
+
+      const manualDate =
+        new Date(
+          `${manualRegistrationDate}T12:00:00`
+        );
+
+
+      if (
+        Number.isNaN(
+          manualDate.getTime()
+        )
+      ) {
+
+        return null;
+
+      }
+
+
+      return manualDate
+        .toISOString();
+
+    };
+
   const [
     showDiscardModal,
     setShowDiscardModal
@@ -134,50 +294,6 @@ const RegisterMemberPage = () => {
   ];
 
 
-  // ======================================================
-  // FECHA ACTUAL PARA MOSTRAR
-  // ======================================================
-
-  const getCurrentDate = () => {
-
-    const now = new Date();
-
-    const months = [
-      'Ene',
-      'Feb',
-      'Mar',
-      'Abr',
-      'May',
-      'Jun',
-      'Jul',
-      'Ago',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dic'
-    ];
-
-    const day =
-      now
-        .getDate()
-        .toString()
-        .padStart(2, '0');
-
-    const month =
-      months[
-        now.getMonth()
-      ];
-
-    const year =
-      now.getFullYear();
-
-
-    return `${day} ${month} ${year}`;
-  };
-
-
-  const registrationDate =
-    getCurrentDate();
 
 
   // ======================================================
@@ -481,6 +597,59 @@ const RegisterMemberPage = () => {
     }
 
 
+    // ======================================================
+    // VALIDAR FECHA DE REGISTRO MANUAL
+    // ======================================================
+
+    if (
+      registrationDateMode ===
+      'manual'
+    ) {
+
+      if (
+        !manualRegistrationDate
+      ) {
+
+        newErrors.registrationDate =
+          'Selecciona la fecha de registro del miembro';
+
+      } else {
+
+        const selectedDate =
+          new Date(
+            `${manualRegistrationDate}T12:00:00`
+          );
+
+        const today =
+          new Date(
+            `${getTodayInputValue()}T23:59:59`
+          );
+
+
+        if (
+          Number.isNaN(
+            selectedDate.getTime()
+          )
+        ) {
+
+          newErrors.registrationDate =
+            'La fecha seleccionada no es válida';
+
+        } else if (
+          selectedDate >
+          today
+        ) {
+
+          newErrors.registrationDate =
+            'La fecha de registro no puede ser futura';
+
+        }
+
+      }
+
+    }
+
+
     if (
       Object.keys(
         newErrors
@@ -546,6 +715,10 @@ const RegisterMemberPage = () => {
         .toISOString();
 
 
+    const resolvedRegistrationDate =
+      getRegistrationDateISO();
+
+
     const memberData = {
 
       ...personalData,
@@ -572,9 +745,16 @@ const RegisterMemberPage = () => {
       // FECHAS
       // ====================================================
 
+      // Fecha histórica del miembro.
+      // Puede ser la fecha actual o una fecha anterior
+      // seleccionada manualmente por el encargado.
       registrationDate:
-        now,
+        resolvedRegistrationDate,
 
+      registrationDateMode,
+
+      // createdAt SIEMPRE conserva cuándo fue creado
+      // realmente el registro dentro del sistema.
       createdAt:
         now,
 
@@ -668,6 +848,11 @@ const RegisterMemberPage = () => {
           value =>
             value !== '' &&
             value !== null
+        ) ||
+        registrationDateMode ===
+          'manual' ||
+        Boolean(
+          manualRegistrationDate
         );
 
 
@@ -1664,20 +1849,165 @@ const RegisterMemberPage = () => {
                       </label>
 
 
-                      <div className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-4 py-2.5">
+                      <div className="grid grid-cols-2 gap-2 mb-3">
 
-                        <span className="text-gray-300">
-                          {
-                            registrationDate
-                          }
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+
+                            setRegistrationDateMode(
+                              'automatic'
+                            );
+
+                            setManualRegistrationDate(
+                              ''
+                            );
+
+                            setErrors(
+                              previous => ({
+                                ...previous,
+                                registrationDate:
+                                  ''
+                              })
+                            );
+
+                          }}
+                          className={`px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
+                            registrationDateMode === 'automatic'
+                              ? 'bg-[#00ff88]/10 border-[#00ff88] text-[#00ff88]'
+                              : 'bg-[#1a1a1a] border-[#2a2a2a] text-gray-400 hover:border-[#00ff88]/40'
+                          }`}
+                        >
+                          Automática
+                        </button>
 
 
-                        <span className="text-gray-500 text-xs ml-auto">
-                          Generada automáticamente
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+
+                            setRegistrationDateMode(
+                              'manual'
+                            );
+
+                            if (
+                              !manualRegistrationDate
+                            ) {
+
+                              setManualRegistrationDate(
+                                getTodayInputValue()
+                              );
+
+                            }
+
+                          }}
+                          className={`px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
+                            registrationDateMode === 'manual'
+                              ? 'bg-[#00ff88]/10 border-[#00ff88] text-[#00ff88]'
+                              : 'bg-[#1a1a1a] border-[#2a2a2a] text-gray-400 hover:border-[#00ff88]/40'
+                          }`}
+                        >
+                          Manual
+                        </button>
 
                       </div>
+
+
+                      {
+                        registrationDateMode ===
+                          'automatic'
+                          ? (
+
+                            <div className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-4 py-2.5">
+
+                              <Calendar
+                                size={17}
+                                className="text-[#00ff88]"
+                              />
+
+                              <span className="text-gray-300">
+                                {
+                                  registrationDate
+                                }
+                              </span>
+
+
+                              <span className="text-gray-500 text-xs ml-auto">
+                                Hoy
+                              </span>
+
+                            </div>
+
+                          )
+                          : (
+
+                            <>
+
+                              <div className="relative">
+
+                                <Calendar
+                                  size={18}
+                                  className="absolute left-3 top-1/2 -translate-y-1/2 text-[#00ff88] pointer-events-none"
+                                />
+
+
+                                <input
+                                  type="date"
+                                  value={
+                                    manualRegistrationDate
+                                  }
+                                  max={
+                                    getTodayInputValue()
+                                  }
+                                  onChange={
+                                    event => {
+
+                                      setManualRegistrationDate(
+                                        event.target.value
+                                      );
+
+                                      setErrors(
+                                        previous => ({
+                                          ...previous,
+                                          registrationDate:
+                                            ''
+                                        })
+                                      );
+
+                                    }
+                                  }
+                                  className={`w-full bg-[#1a1a1a] border rounded-xl pl-10 pr-4 py-2.5 text-white focus:border-[#00ff88] focus:outline-none transition-colors ${
+                                    errors.registrationDate
+                                      ? 'border-red-500'
+                                      : 'border-[#2a2a2a]'
+                                  }`}
+                                />
+
+                              </div>
+
+
+                              {
+                                errors.registrationDate &&
+                                (
+
+                                  <p className="text-red-400 text-xs mt-1">
+                                    {
+                                      errors.registrationDate
+                                    }
+                                  </p>
+
+                                )
+                              }
+
+
+                              <p className="text-gray-500 text-xs mt-1">
+                                Úsala para miembros que ya habían pagado o iniciado antes de migrar al nuevo sistema.
+                              </p>
+
+                            </>
+
+                          )
+                      }
 
                     </div>
 
@@ -1875,11 +2205,27 @@ const RegisterMemberPage = () => {
                     </span>
 
 
-                    <span className="text-white text-sm">
-                      {
-                        registrationDate
-                      }
-                    </span>
+                    <div className="text-right">
+
+                      <span className="text-white text-sm block">
+                        {
+                          registrationDate
+                        }
+                      </span>
+
+                      <span className={`text-[10px] ${
+                        registrationDateMode === 'manual'
+                          ? 'text-yellow-500'
+                          : 'text-gray-500'
+                      }`}>
+                        {
+                          registrationDateMode === 'manual'
+                            ? 'Fecha manual'
+                            : 'Fecha automática'
+                        }
+                      </span>
+
+                    </div>
 
                   </div>
 
@@ -2159,29 +2505,121 @@ const RegisterMemberPage = () => {
                       key={match.id}
                       className="rounded-xl bg-red-500/5 border border-red-500/15 p-4"
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                        <div>
-                          <p className="text-white font-bold">
-                            {match.fullName || `${match.firstName || ''} ${match.lastName || ''}`.trim() || 'Persona registrada'}
-                          </p>
-                          <p className="text-gray-500 text-xs font-mono mt-1">
-                            ID anterior: {match.previousMemberId || '—'}
-                          </p>
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+
+                        <div className="flex items-start gap-3 min-w-0">
+
+                          <div className="w-14 h-14 rounded-xl bg-[#1a1a1a] border border-red-500/20 overflow-hidden shrink-0 flex items-center justify-center">
+
+                            {
+                              match.profilePhoto ||
+                              match.lastMemberSnapshot?.profilePhoto
+                                ? (
+
+                                  <img
+                                    src={
+                                      match.profilePhoto ||
+                                      match.lastMemberSnapshot?.profilePhoto
+                                    }
+                                    alt={
+                                      match.fullName ||
+                                      'Antecedente'
+                                    }
+                                    className="w-full h-full object-cover"
+                                  />
+
+                                )
+                                : (
+
+                                  <User
+                                    size={24}
+                                    className="text-gray-600"
+                                  />
+
+                                )
+                            }
+
+                          </div>
+
+
+                          <div className="min-w-0">
+
+                            <p className="text-white font-bold">
+                              {match.fullName || `${match.firstName || ''} ${match.lastName || ''}`.trim() || 'Persona registrada'}
+                            </p>
+
+                            <p className="text-gray-500 text-xs font-mono mt-1">
+                              ID anterior: {match.previousMemberId || '—'}
+                            </p>
+
+                            <p className="text-gray-600 text-[11px] mt-1">
+                              Agregado: {
+                                match.addedAt
+                                  ? new Intl.DateTimeFormat(
+                                      'es-MX',
+                                      {
+                                        day: '2-digit',
+                                        month: 'short',
+                                        year: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      }
+                                    ).format(
+                                      new Date(
+                                        match.addedAt
+                                      )
+                                    )
+                                  : 'Sin fecha'
+                              }
+                            </p>
+
+                            <p className="text-gray-600 text-[11px] mt-0.5">
+                              Por: {match.addedBy?.name || 'Sistema'}
+                            </p>
+
+                          </div>
+
                         </div>
 
-                        <span className="px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 text-[11px] font-bold whitespace-nowrap">
+
+                        <span className="px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 text-[11px] font-bold whitespace-nowrap self-start">
                           Coincide por {match.matchedBy?.join(', ') || 'datos personales'}
                         </span>
+
                       </div>
 
+
                       <div className="mt-3">
+
                         <p className="text-gray-500 text-[11px] uppercase tracking-wider">
                           Motivo anterior
                         </p>
+
                         <p className="text-gray-300 text-sm mt-1">
                           {match.reason || 'Sin motivo registrado'}
                         </p>
+
                       </div>
+
+
+                      {
+                        match.notes &&
+                        (
+
+                          <div className="mt-3">
+
+                            <p className="text-gray-500 text-[11px] uppercase tracking-wider">
+                              Notas
+                            </p>
+
+                            <p className="text-gray-400 text-sm mt-1">
+                              {match.notes}
+                            </p>
+
+                          </div>
+
+                        )
+                      }
                     </div>
                   ))}
 

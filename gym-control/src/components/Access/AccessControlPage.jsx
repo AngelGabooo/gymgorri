@@ -57,6 +57,12 @@ import {
   bestSimilarityBetweenSets
 } from '../../services/faceService';
 
+import {
+  addAccessLog,
+  captureVideoEvidence,
+  openTemporaryCamera
+} from '../../utils/accessEvidence';
+
 
 // ======================================================
 // STORAGE
@@ -971,7 +977,8 @@ const AccessControlPage = () => {
 
   const registerMovement = (
     member,
-    method
+    method,
+    evidence = null
   ) => {
 
     const attendance =
@@ -1046,6 +1053,11 @@ const AccessControlPage = () => {
 
               exitMethod:
                 method,
+
+              exitEvidence:
+                evidence ||
+                record.exitEvidence ||
+                null,
 
               status:
                 'completed',
@@ -1131,6 +1143,10 @@ const AccessControlPage = () => {
         null,
 
       method,
+
+      entryEvidence:
+        evidence ||
+        null,
 
       entryAt:
         now,
@@ -1283,14 +1299,264 @@ const AccessControlPage = () => {
 
 
   // ======================================================
+  // EVIDENCIA TEMPORAL / ANTI-PRÉSTAMO
+  // ======================================================
+
+  const captureTemporaryMemberEvidence =
+    useCallback(
+      async (
+        member,
+        verifyIdentity = false
+      ) => {
+
+        let camera =
+          null;
+
+
+        try {
+
+          camera =
+            await openTemporaryCamera({
+              facingMode:
+                'user',
+
+              idealWidth:
+                640,
+
+              idealHeight:
+                480
+            });
+
+
+          const photo =
+            captureVideoEvidence(
+              camera.video
+            );
+
+
+          if (
+            !verifyIdentity
+          ) {
+
+            return {
+              capturedAt:
+                new Date()
+                  .toISOString(),
+
+              photo,
+
+              faceVerified:
+                null,
+
+              similarity:
+                null
+            };
+
+          }
+
+
+          const storedEmbeddings =
+            member
+              ?.access
+              ?.face
+              ?.embeddings;
+
+
+          if (
+            member?.access?.face?.enabled !==
+              true ||
+            member?.access?.face?.enrolled !==
+              true ||
+            !Array.isArray(
+              storedEmbeddings
+            ) ||
+            storedEmbeddings.length ===
+              0
+          ) {
+
+            return {
+              capturedAt:
+                new Date()
+                  .toISOString(),
+
+              photo,
+
+              faceVerified:
+                false,
+
+              similarity:
+                0,
+
+              reason:
+                'FACE_NOT_CONFIGURED'
+            };
+
+          }
+
+
+          await initializeFaceEngine();
+
+
+          let bestSimilarity =
+            0;
+
+          let successfulDetection =
+            null;
+
+
+          // Hacemos hasta 2 lecturas para evitar rechazos
+          // por un cuadro borroso.
+          for (
+            let attempt = 0;
+            attempt < 2;
+            attempt += 1
+          ) {
+
+            const detection =
+              await detectFace(
+                camera.video
+              );
+
+
+            if (
+              detection.success &&
+              Array.isArray(
+                detection.embedding
+              )
+            ) {
+
+              successfulDetection =
+                detection;
+
+
+              const similarity =
+                bestSimilarityBetweenSets(
+                  [
+                    Array.from(
+                      detection.embedding
+                    )
+                  ],
+                  storedEmbeddings
+                );
+
+
+              bestSimilarity =
+                Math.max(
+                  bestSimilarity,
+                  similarity
+                );
+
+            }
+
+
+            if (
+              bestSimilarity >=
+              FACE_THRESHOLD
+            ) {
+
+              break;
+
+            }
+
+
+            await new Promise(
+              resolve =>
+                setTimeout(
+                  resolve,
+                  300
+                )
+            );
+
+          }
+
+
+          return {
+            capturedAt:
+              new Date()
+                .toISOString(),
+
+            photo:
+              captureVideoEvidence(
+                camera.video
+              ) ||
+              photo,
+
+            faceVerified:
+              Boolean(
+                successfulDetection &&
+                bestSimilarity >=
+                  FACE_THRESHOLD
+              ),
+
+            similarity:
+              bestSimilarity,
+
+            reason:
+              successfulDetection
+                ? (
+                    bestSimilarity >=
+                      FACE_THRESHOLD
+                      ? null
+                      : 'FACE_MISMATCH'
+                  )
+                : 'NO_FACE'
+          };
+
+        } catch (
+          error
+        ) {
+
+          console.error(
+            'Error capturando evidencia temporal:',
+            error
+          );
+
+
+          return {
+            capturedAt:
+              new Date()
+                .toISOString(),
+
+            photo:
+              null,
+
+            faceVerified:
+              verifyIdentity
+                ? false
+                : null,
+
+            similarity:
+              0,
+
+            reason:
+              'CAMERA_ERROR',
+
+            errorMessage:
+              error?.message ||
+              'No se pudo iniciar la cámara.'
+          };
+
+        } finally {
+
+          camera?.stop?.();
+
+        }
+
+      },
+      []
+    );
+
+
+  // ======================================================
   // PROCESAR MIEMBRO AUTENTICADO
   // ======================================================
 
   const processAuthenticatedMember =
     useCallback(
-      (
+      async (
         member,
-        method
+        method,
+        evidence = null
       ) => {
 
         if (
@@ -1438,7 +1704,8 @@ const AccessControlPage = () => {
           const movement =
             registerMovement(
               member,
-              method
+              method,
+              evidence
             );
 
 
@@ -1497,6 +1764,30 @@ const AccessControlPage = () => {
           );
 
 
+          addAccessLog({
+            memberId:
+              member.id,
+
+            memberName:
+              fullName,
+
+            method,
+
+            movement:
+              movement.type,
+
+            result:
+              'allowed',
+
+            evidence:
+              evidence ||
+              null,
+
+            attendanceId:
+              movement.attendanceId
+          });
+
+
           setCountdown(
             5
           );
@@ -1538,7 +1829,7 @@ const AccessControlPage = () => {
 
   const processQRData =
     useCallback(
-      (rawData) => {
+      async (rawData) => {
         try {
           let decoded;
 
@@ -1566,7 +1857,99 @@ const AccessControlPage = () => {
           const member = getMemberByQRToken(personId, token);
 
           if (member) {
-            processAuthenticatedMember(member, 'qr');
+
+            setMemberData({
+              ...member,
+              name:
+                getFullName(
+                  member
+                )
+            });
+
+            setScanStatus(
+              'scanning'
+            );
+
+            setAccessMessage(
+              'QR válido. Verificando que el rostro coincida con el titular...'
+            );
+
+
+            const evidence =
+              await captureTemporaryMemberEvidence(
+                member,
+                true
+              );
+
+
+            if (
+              evidence.faceVerified !==
+              true
+            ) {
+
+              const similarity =
+                Number(
+                  evidence.similarity ||
+                  0
+                );
+
+
+              setScanStatus(
+                'error'
+              );
+
+              setAccessMessage(
+                evidence.reason ===
+                  'FACE_NOT_CONFIGURED'
+                  ? 'El QR es válido, pero este miembro no tiene reconocimiento facial habilitado.'
+                  : evidence.reason ===
+                      'CAMERA_ERROR'
+                    ? 'No fue posible verificar el rostro. El acceso por QR fue bloqueado por seguridad.'
+                    : `Identidad no coincide con el titular del QR${similarity > 0 ? ` · ${Math.round(similarity * 100)}%` : ''}.`
+              );
+
+
+              addAccessLog({
+                memberId:
+                  member.id,
+
+                memberName:
+                  getFullName(
+                    member
+                  ),
+
+                method:
+                  'qr',
+
+                movement:
+                  'attempt',
+
+                result:
+                  'denied',
+
+                reason:
+                  evidence.reason ||
+                  'FACE_MISMATCH',
+
+                evidence
+              });
+
+
+              setCountdown(
+                6
+              );
+
+              return;
+
+            }
+
+
+            await processAuthenticatedMember(
+              member,
+              'qr',
+              evidence
+            );
+
             return;
           }
 
@@ -1588,7 +1971,11 @@ const AccessControlPage = () => {
           setCountdown(4);
         }
       },
-      [processAuthenticatedMember, processAuthenticatedVisit]
+      [
+        captureTemporaryMemberEvidence,
+        processAuthenticatedMember,
+        processAuthenticatedVisit
+      ]
     );
 
   const handleQRScan =
@@ -1768,7 +2155,23 @@ const AccessControlPage = () => {
 
       if (member) {
         setPin('');
-        processAuthenticatedMember(member, 'pin');
+
+        setAccessMessage(
+          'PIN válido. Capturando evidencia de acceso...'
+        );
+
+        const evidence =
+          await captureTemporaryMemberEvidence(
+            member,
+            false
+          );
+
+        await processAuthenticatedMember(
+          member,
+          'pin',
+          evidence
+        );
+
         return;
       }
 
@@ -2212,9 +2615,41 @@ const AccessControlPage = () => {
 
 
           if (personType === 'visit') {
-            processAuthenticatedVisit(person, 'face');
+
+            processAuthenticatedVisit(
+              person,
+              'face'
+            );
+
           } else {
-            processAuthenticatedMember(person, 'face');
+
+            const evidence = {
+              capturedAt:
+                new Date()
+                  .toISOString(),
+
+              photo:
+                captureVideoEvidence(
+                  video
+                ),
+
+              faceVerified:
+                true,
+
+              similarity:
+                match.similarity,
+
+              reason:
+                null
+            };
+
+
+            await processAuthenticatedMember(
+              person,
+              'face',
+              evidence
+            );
+
           }
 
         } catch (

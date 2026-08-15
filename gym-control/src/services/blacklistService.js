@@ -472,6 +472,12 @@ export const addMemberToBlacklist = ({
       member.birthDate ||
       '',
 
+    profilePhoto:
+      member.profilePhoto ||
+      member.profilePhotoUrl ||
+      previousRecord?.profilePhoto ||
+      null,
+
     reason:
       cleanReason,
 
@@ -533,6 +539,11 @@ export const addMemberToBlacklist = ({
       email:
         member.email ||
         '',
+
+      profilePhoto:
+        member.profilePhoto ||
+        member.profilePhotoUrl ||
+        null,
 
       registrationDate:
         member.registrationDate ||

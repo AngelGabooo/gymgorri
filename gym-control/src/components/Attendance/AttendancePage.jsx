@@ -22,7 +22,8 @@ import {
   Calendar,
   Clock,
   User,
-  TrendingUp
+  TrendingUp,
+  Camera
 } from 'lucide-react';
 
 import Sidebar from '../Layout/Sidebar';
@@ -32,6 +33,11 @@ import AttendanceStatCard from './Cards/AttendanceStatCard';
 import {
   getMemberById
 } from '../../utils/memberId';
+
+import {
+  getVisitAttendance,
+  getVisitById
+} from '../../utils/visitsStorage';
 
 
 // ======================================================
@@ -413,6 +419,12 @@ const AttendancePage = () => {
   ] = useState([]);
 
 
+  const [
+    selectedEvidence,
+    setSelectedEvidence
+  ] = useState(null);
+
+
   // ======================================================
   // CARGAR ASISTENCIAS
   // ======================================================
@@ -420,18 +432,72 @@ const AttendancePage = () => {
   const loadAttendance =
     () => {
 
-      const stored =
+      const memberAttendance =
         getStoredAttendance();
+
+      const visitAttendance =
+        getVisitAttendance();
+
+
+      const normalizedMemberRecords =
+        memberAttendance.map(
+          record => ({
+            ...record,
+
+            personType:
+              'member'
+          })
+        );
+
+
+      const normalizedVisitRecords =
+        visitAttendance.map(
+          record => ({
+            ...record,
+
+            personType:
+              'visit',
+
+            memberId:
+              record.visitId ||
+              record.visitorId ||
+              record.memberId,
+
+            memberName:
+              record.visitName ||
+              record.visitorName ||
+              record.memberName ||
+              'Visita'
+          })
+        );
+
+
+      const allAttendance = [
+        ...normalizedMemberRecords,
+        ...normalizedVisitRecords
+      ];
 
 
       console.log(
-        '🕒 Asistencias cargadas:',
-        stored
+        '🕒 Asistencias de miembros:',
+        memberAttendance
+      );
+
+
+      console.log(
+        '👤 Asistencias de visitas:',
+        visitAttendance
+      );
+
+
+      console.log(
+        '📋 Asistencias combinadas:',
+        allAttendance
       );
 
 
       setAttendanceData(
-        stored
+        allAttendance
       );
 
     };
@@ -499,9 +565,75 @@ const AttendancePage = () => {
           .map(
             item => {
 
+              const isVisit =
+                item.personType ===
+                  'visit' ||
+                Boolean(
+                  item.visitId
+                ) ||
+                Boolean(
+                  item.visitorId
+                ) ||
+                String(
+                  item.memberId ||
+                  ''
+                ).startsWith(
+                  'VIS-'
+                );
+
+
+              const personId =
+                item.visitId ||
+                item.visitorId ||
+                item.memberId;
+
+
               const member =
-                getMemberById(
-                  item.memberId
+                !isVisit
+                  ? getMemberById(
+                      personId
+                    )
+                  : null;
+
+
+              const visit =
+                isVisit
+                  ? getVisitById(
+                      personId
+                    )
+                  : null;
+
+
+              const personName =
+                isVisit
+                  ? (
+                      item.visitName ||
+                      item.visitorName ||
+                      item.memberName ||
+                      `${visit?.firstName || ''} ${visit?.lastName || ''}`.trim() ||
+                      visit?.name ||
+                      'Visita'
+                    )
+                  : (
+                      item.memberName ||
+                      `${member?.firstName || ''} ${member?.lastName || ''}`.trim() ||
+                      'Miembro'
+                    );
+
+
+              const profilePhoto =
+                item.profilePhoto ||
+                (
+                  isVisit
+                    ? (
+                        visit?.profilePhoto ||
+                        visit?.profilePhotoUrl ||
+                        null
+                      )
+                    : (
+                        member?.profilePhoto ||
+                        null
+                      )
                 );
 
 
@@ -509,19 +641,30 @@ const AttendancePage = () => {
 
                 ...item,
 
-                memberName:
-                  item.memberName ||
-                  `${member?.firstName || ''} ${member?.lastName || ''}`.trim() ||
-                  'Miembro',
+                memberId:
+                  personId,
 
-                profilePhoto:
-                  item.profilePhoto ||
-                  member?.profilePhoto ||
-                  null,
+                memberName:
+                  personName,
+
+                profilePhoto,
 
                 phone:
-                  member?.phone ||
-                  '',
+                  isVisit
+                    ? (
+                        visit?.phone ||
+                        visit?.telephone ||
+                        ''
+                      )
+                    : (
+                        member?.phone ||
+                        ''
+                      ),
+
+                personType:
+                  isVisit
+                    ? 'visit'
+                    : 'member',
 
                 durationMinutes:
                   item.durationMinutes ||
@@ -1155,7 +1298,8 @@ const AttendancePage = () => {
       const rows = [
 
         [
-          'Miembro',
+          'Persona',
+          'Tipo',
           'ID',
           'Fecha',
           'Entrada',
@@ -1169,6 +1313,11 @@ const AttendancePage = () => {
           item => [
 
             item.memberName,
+
+            item.personType ===
+              'visit'
+              ? 'Visita'
+              : 'Miembro',
 
             item.memberId,
 
@@ -1376,7 +1525,7 @@ const AttendancePage = () => {
 
             <input
               type="text"
-              placeholder="Buscar miembro por nombre o ID..."
+              placeholder="Buscar persona por nombre o ID..."
               value={
                 searchTerm
               }
@@ -1600,7 +1749,7 @@ const AttendancePage = () => {
                       <tr>
 
                         <th className="text-left py-3 px-4 text-gray-400 text-xs font-medium uppercase">
-                          Miembro
+                          Persona
                         </th>
 
                         <th className="text-left py-3 px-4 text-gray-400 text-xs font-medium uppercase">
@@ -1695,11 +1844,26 @@ const AttendancePage = () => {
                                     </p>
 
 
-                                    <p className="text-gray-500 text-xs font-mono">
+                                    <div className="flex items-center gap-2 mt-0.5">
+
+                                      <p className="text-gray-500 text-xs font-mono">
+                                        {
+                                          item.memberId
+                                        }
+                                      </p>
+
+
                                       {
-                                        item.memberId
+                                        item.personType ===
+                                          'visit' &&
+                                        (
+                                          <span className="px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-400 text-[10px] font-semibold uppercase tracking-wide">
+                                            Visita
+                                          </span>
+                                        )
                                       }
-                                    </p>
+
+                                    </div>
 
                                   </div>
 
@@ -1822,21 +1986,65 @@ const AttendancePage = () => {
 
                               <td className="py-4 px-4">
 
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    navigate(
-                                      `/members/${item.memberId}`
+                                <div className="flex items-center gap-2">
+
+                                  {
+                                    (
+                                      item.entryEvidence?.photo ||
+                                      item.exitEvidence?.photo
+                                    ) &&
+                                    (
+
+                                      <button
+                                        type="button"
+                                        title="Ver evidencia de acceso"
+                                        onClick={() =>
+                                          setSelectedEvidence(
+                                            item
+                                          )
+                                        }
+                                        className="w-9 h-9 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg flex items-center justify-center text-gray-400 hover:text-[#00ff88] hover:border-[#00ff88]"
+                                      >
+
+                                        <Camera
+                                          size={16}
+                                        />
+
+                                      </button>
+
                                     )
                                   }
-                                  className="w-9 h-9 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg flex items-center justify-center text-gray-400 hover:text-[#00ff88] hover:border-[#00ff88]"
-                                >
 
-                                  <Eye
-                                    size={16}
-                                  />
 
-                                </button>
+                                  <button
+                                    type="button"
+                                    title="Ver perfil"
+                                    onClick={() => {
+                                      if (
+                                        item.personType ===
+                                        'visit'
+                                      ) {
+                                        navigate(
+                                          '/visits'
+                                        );
+
+                                        return;
+                                      }
+
+                                      navigate(
+                                        `/members/${item.memberId}`
+                                      );
+                                    }}
+                                    className="w-9 h-9 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg flex items-center justify-center text-gray-400 hover:text-[#00ff88] hover:border-[#00ff88]"
+                                  >
+
+                                    <Eye
+                                      size={16}
+                                    />
+
+                                  </button>
+
+                                </div>
 
                               </td>
 
@@ -2141,11 +2349,22 @@ const AttendancePage = () => {
 
                               <button
                                 type="button"
-                                onClick={() =>
+                                onClick={() => {
+                                  if (
+                                    item.personType ===
+                                      'visit'
+                                  ) {
+                                    navigate(
+                                      '/visits'
+                                    );
+
+                                    return;
+                                  }
+
                                   navigate(
                                     `/members/${item.memberId}`
-                                  )
-                                }
+                                  );
+                                }}
                                 className="text-white font-semibold hover:text-[#00ff88]"
                               >
                                 {
@@ -2154,11 +2373,26 @@ const AttendancePage = () => {
                               </button>
 
 
-                              <p className="text-gray-500 text-xs font-mono">
+                              <div className="flex items-center gap-2 mt-0.5">
+
+                                <p className="text-gray-500 text-xs font-mono">
+                                  {
+                                    item.memberId
+                                  }
+                                </p>
+
+
                                 {
-                                  item.memberId
+                                  item.personType ===
+                                    'visit' &&
+                                  (
+                                    <span className="px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-400 text-[10px] font-semibold uppercase tracking-wide">
+                                      Visita
+                                    </span>
+                                  )
                                 }
-                              </p>
+
+                              </div>
 
                             </div>
 
@@ -2555,6 +2789,224 @@ const AttendancePage = () => {
           }
 
         </main>
+
+      </div>
+
+      {
+        selectedEvidence &&
+        (
+
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+
+            <button
+              type="button"
+              aria-label="Cerrar evidencia"
+              onClick={() =>
+                setSelectedEvidence(
+                  null
+                )
+              }
+              className="absolute inset-0 bg-black/85 backdrop-blur-sm"
+            />
+
+
+            <div className="relative w-full max-w-3xl bg-[#111111] border border-[#2a2a2a] rounded-2xl overflow-hidden shadow-2xl">
+
+              <div className="p-6 border-b border-[#1a1a1a] flex items-start justify-between gap-4">
+
+                <div>
+
+                  <h2 className="text-white text-xl font-black">
+                    Evidencia de acceso
+                  </h2>
+
+                  <p className="text-gray-500 text-sm mt-1">
+                    {selectedEvidence.memberName} · {selectedEvidence.memberId}
+                  </p>
+
+                </div>
+
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedEvidence(
+                      null
+                    )
+                  }
+                  className="w-9 h-9 rounded-xl bg-[#1a1a1a] border border-[#2a2a2a] text-gray-400 hover:text-white"
+                >
+                  ×
+                </button>
+
+              </div>
+
+
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+
+                <EvidenceCard
+                  title="Entrada"
+                  evidence={
+                    selectedEvidence.entryEvidence
+                  }
+                  date={
+                    selectedEvidence.entryAt
+                  }
+                  method={
+                    selectedEvidence.method
+                  }
+                />
+
+                <EvidenceCard
+                  title="Salida"
+                  evidence={
+                    selectedEvidence.exitEvidence
+                  }
+                  date={
+                    selectedEvidence.exitAt
+                  }
+                  method={
+                    selectedEvidence.exitMethod ||
+                    selectedEvidence.method
+                  }
+                />
+
+              </div>
+
+            </div>
+
+          </div>
+
+        )
+      }
+
+
+    </div>
+
+  );
+
+};
+
+
+// ======================================================
+// TARJETA DE EVIDENCIA
+// ======================================================
+
+const EvidenceCard = ({
+  title,
+  evidence,
+  date,
+  method
+}) => {
+
+  if (!evidence) {
+
+    return (
+
+      <div className="rounded-xl border border-[#2a2a2a] bg-[#0d0d0d] p-8 text-center text-gray-500">
+        No existe evidencia para {title.toLowerCase()}.
+      </div>
+
+    );
+
+  }
+
+
+  return (
+
+    <div className="rounded-xl border border-[#2a2a2a] bg-[#0d0d0d] overflow-hidden">
+
+      <div className="p-4 border-b border-[#1a1a1a]">
+
+        <p className="text-white font-bold">
+          {title}
+        </p>
+
+        <p className="text-gray-500 text-xs mt-1">
+          {formatDate(date)} · {formatTime(date)}
+        </p>
+
+      </div>
+
+
+      {
+        evidence.photo
+          ? (
+
+            <img
+              src={
+                evidence.photo
+              }
+              alt={`Evidencia ${title.toLowerCase()}`}
+              className="w-full aspect-[4/3] object-cover bg-black"
+            />
+
+          )
+          : (
+
+            <div className="aspect-[4/3] flex items-center justify-center text-gray-600">
+              Sin fotografía
+            </div>
+
+          )
+      }
+
+
+      <div className="p-4 space-y-2 text-sm">
+
+        <div className="flex justify-between gap-3">
+          <span className="text-gray-500">Método</span>
+          <span className="text-white">{formatMethod(method)}</span>
+        </div>
+
+
+        {
+          evidence.faceVerified !==
+            null &&
+          evidence.faceVerified !==
+            undefined &&
+          (
+
+            <div className="flex justify-between gap-3">
+
+              <span className="text-gray-500">
+                Verificación facial
+              </span>
+
+              <span className={
+                evidence.faceVerified
+                  ? 'text-[#00ff88]'
+                  : 'text-red-400'
+              }>
+                {
+                  evidence.faceVerified
+                    ? 'Coincide'
+                    : 'No coincide'
+                }
+              </span>
+
+            </div>
+
+          )
+        }
+
+
+        {
+          Number(
+            evidence.similarity
+          ) >
+            0 &&
+          (
+
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">Similitud</span>
+              <span className="text-white">
+                {Math.round(Number(evidence.similarity) * 100)}%
+              </span>
+            </div>
+
+          )
+        }
 
       </div>
 

@@ -49,6 +49,14 @@ import {
   findDuplicateFace,
 } from '../../../services/faceService';
 
+import {
+  getCurrentSession
+} from '../../../services/authService';
+
+import {
+  addCredentialHistoryEvent
+} from '../../../utils/credentialHistory';
+
 
 const PAYMENTS_KEY = 'gym_control_payments';
 const SUBSCRIPTION_HISTORY_KEY = 'gym_control_subscription_history';
@@ -89,6 +97,9 @@ const RegisterQRPage = () => {
   const receiptRef = useRef(null);
 
   const { settings } = useGymSettings();
+
+  const currentSession =
+    getCurrentSession();
 
   // ======================================================
   // DATOS PASO 1 Y 2
@@ -211,6 +222,17 @@ const RegisterQRPage = () => {
     setTimeout(() => {
       setIsGenerating(false);
       setQrGenerated(true);
+
+      addCredentialHistoryEvent({
+        memberId,
+        memberName: fullName,
+        action: 'generated',
+        source: 'registration',
+        actor: currentSession,
+        metadata: {
+          qrGenerated: true
+        }
+      });
     }, 900);
   };
 
@@ -272,6 +294,14 @@ const RegisterQRPage = () => {
       link.href = canvas.toDataURL('image/png');
       link.click();
 
+      addCredentialHistoryEvent({
+        memberId,
+        memberName: fullName,
+        action: 'qr_downloaded',
+        source: 'registration',
+        actor: currentSession
+      });
+
       URL.revokeObjectURL(url);
     };
 
@@ -302,6 +332,14 @@ const RegisterQRPage = () => {
         link.download = `Credencial-${memberId}.png`;
         link.href = canvas.toDataURL('image/png');
         link.click();
+
+        addCredentialHistoryEvent({
+          memberId,
+          memberName: fullName,
+          action: 'credential_downloaded',
+          source: 'registration',
+          actor: currentSession
+        });
       } catch (error) {
         console.error('Error descargando credencial:', error);
       }
@@ -349,6 +387,14 @@ const RegisterQRPage = () => {
     `);
 
     win.document.close();
+
+    addCredentialHistoryEvent({
+      memberId,
+      memberName: fullName,
+      action: 'credential_printed',
+      source: 'registration',
+      actor: currentSession
+    });
   };
 
   // ======================================================

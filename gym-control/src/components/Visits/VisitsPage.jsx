@@ -15,7 +15,6 @@ import {
   Users,
   Clock,
   Search,
-  Plus,
   QrCode,
   ScanFace,
   KeyRound,
@@ -35,12 +34,176 @@ import {
   getVisitAttendance
 } from '../../utils/visitsStorage';
 
+import {
+  getStoredMembers
+} from '../../utils/memberId';
+
 
 // ======================================================
 // UTILIDADES
 // ======================================================
 
 const ITEMS_PER_PAGE = 10;
+
+const MEMBER_ATTENDANCE_KEY =
+  'gym_control_attendance';
+
+
+// ======================================================
+// LEER ARRAY LOCAL
+// ======================================================
+
+const readLocalArray = (
+  key
+) => {
+
+  try {
+
+    const raw =
+      localStorage.getItem(
+        key
+      );
+
+    if (!raw) {
+      return [];
+    }
+
+    const parsed =
+      JSON.parse(
+        raw
+      );
+
+    return Array.isArray(
+      parsed
+    )
+      ? parsed
+      : [];
+
+  } catch (error) {
+
+    console.error(
+      `Error leyendo ${key}:`,
+      error
+    );
+
+    return [];
+
+  }
+
+};
+
+
+// ======================================================
+// OBTENER INFORMACIÓN DEL PLAN
+// ======================================================
+
+const getPlanInfo = (
+  member
+) => {
+
+  const subscription =
+    member?.subscription ||
+    {};
+
+  const planId =
+    String(
+      subscription.plan ||
+      subscription.planId ||
+      subscription.selectedPlan ||
+      ''
+    )
+      .trim()
+      .toLowerCase();
+
+  const planLabel =
+    String(
+      subscription.planLabel ||
+      subscription.label ||
+      ''
+    )
+      .trim();
+
+  const days =
+    Number(
+      subscription.days ??
+      subscription.durationDays ??
+      subscription.planDays ??
+      0
+    ) ||
+    0;
+
+  const normalizedLabel =
+    planLabel
+      .toLowerCase();
+
+  const isMonthly =
+    planId === 'mensual' ||
+    planId === 'monthly' ||
+    normalizedLabel === 'mensual' ||
+    normalizedLabel === 'monthly';
+
+  const isAnnual =
+    planId === 'anual' ||
+    planId === 'annual' ||
+    normalizedLabel === 'anual' ||
+    normalizedLabel === 'annual';
+
+  const idLooksLikeDays =
+    planId.includes('dia') ||
+    planId.includes('day');
+
+  const labelLooksLikeDays =
+    normalizedLabel.includes('día') ||
+    normalizedLabel.includes('dia') ||
+    normalizedLabel.includes('day');
+
+  // En GYM CONTROL los planes cortos configurados son
+  // 7 días y 15 días. Esta condición también soporta
+  // futuros planes por días menores a un mes.
+  const isDayPlan =
+    !isMonthly &&
+    !isAnnual &&
+    (
+      idLooksLikeDays ||
+      labelLooksLikeDays ||
+      (
+        days > 0 &&
+        days < 30
+      )
+    );
+
+  let resolvedLabel =
+    planLabel;
+
+  if (!resolvedLabel) {
+
+    if (planId === '7dias') {
+      resolvedLabel = '7 días';
+    } else if (planId === '15dias') {
+      resolvedLabel = '15 días';
+    } else if (isMonthly) {
+      resolvedLabel = 'Mensual';
+    } else if (isAnnual) {
+      resolvedLabel = 'Anual';
+    } else if (days > 0) {
+      resolvedLabel = `${days} días`;
+    } else {
+      resolvedLabel = 'Sin plan';
+    }
+
+  }
+
+  return {
+    planId,
+    planLabel:
+      resolvedLabel,
+    days,
+    isDayPlan,
+    isMonthly,
+    isAnnual
+  };
+
+};
 
 
 const getLocalDateKey = (
@@ -243,6 +406,18 @@ const VisitsPage = () => {
 
 
   const [
+    members,
+    setMembers
+  ] = useState([]);
+
+
+  const [
+    memberAttendance,
+    setMemberAttendance
+  ] = useState([]);
+
+
+  const [
     searchTerm,
     setSearchTerm
   ] = useState('');
@@ -276,6 +451,18 @@ const VisitsPage = () => {
 
       setAttendance(
         getVisitAttendance()
+      );
+
+
+      setMembers(
+        getStoredMembers()
+      );
+
+
+      setMemberAttendance(
+        readLocalArray(
+          MEMBER_ATTENDANCE_KEY
+        )
       );
 
     };
@@ -362,93 +549,295 @@ const VisitsPage = () => {
 
 
   // ======================================================
+  // MAPA DE MIEMBROS
+  // ======================================================
+
+  const memberMap =
+    useMemo(
+      () => {
+
+        const map =
+          new Map();
+
+
+        members.forEach(
+          member => {
+
+            if (
+              member?.id
+            ) {
+
+              map.set(
+                member.id,
+                member
+              );
+
+            }
+
+          }
+        );
+
+
+        return map;
+
+      },
+      [members]
+    );
+
+
+  // ======================================================
   // NORMALIZAR HISTORIAL DE VISITAS POR DÍA
+  //
+  // Se consideran:
+  // 1. Visitas temporales reales (VIS-xxxxx).
+  // 2. Miembros GYM-xxxxx con plan POR DÍAS
+  //    (7 días, 15 días o cualquier plan < 30 días).
   // ======================================================
 
   const dailyVisitRecords =
     useMemo(
       () => {
 
-        return attendance
-          .map(
-            record => {
+        // ================================================
+        // VISITAS TEMPORALES (VIS-xxxxx)
+        // ================================================
 
-              const visitId =
-                record.visitId ||
-                record.visitorId ||
-                record.memberId ||
-                record.idVisit ||
-                '';
+        const temporaryVisitRecords =
+          attendance
+            .map(
+              record => {
 
-
-              const visit =
-                visitMap.get(
-                  visitId
-                ) ||
-                null;
+                const visitId =
+                  record.visitId ||
+                  record.visitorId ||
+                  record.memberId ||
+                  record.idVisit ||
+                  '';
 
 
-              const fullName =
-                record.visitName ||
-                record.visitorName ||
-                record.memberName ||
-                record.name ||
-                `${visit?.firstName || ''} ${visit?.lastName || ''}`.trim() ||
-                'Visita';
+                const visit =
+                  visitMap.get(
+                    visitId
+                  ) ||
+                  null;
 
 
-              const entryAt =
-                record.entryAt ||
-                record.createdAt ||
-                null;
+                const fullName =
+                  record.visitName ||
+                  record.visitorName ||
+                  record.memberName ||
+                  record.name ||
+                  `${visit?.firstName || ''} ${visit?.lastName || ''}`.trim() ||
+                  'Visita';
 
 
-              const exitAt =
-                record.exitAt ||
-                null;
+                const entryAt =
+                  record.entryAt ||
+                  record.createdAt ||
+                  null;
 
 
-              const entryDateKey =
-                getLocalDateKey(
-                  entryAt
-                );
+                const exitAt =
+                  record.exitAt ||
+                  null;
 
 
-              const durationMinutes =
-                Number(
-                  record.durationMinutes ||
-                  0
-                ) ||
-                (
-                  entryAt &&
-                  exitAt
-                    ? Math.max(
-                        0,
-                        Math.round(
-                          (
-                            new Date(exitAt) -
-                            new Date(entryAt)
-                          ) /
-                          60000
+                const durationMinutes =
+                  Number(
+                    record.durationMinutes ||
+                    0
+                  ) ||
+                  (
+                    entryAt &&
+                    exitAt
+                      ? Math.max(
+                          0,
+                          Math.round(
+                            (
+                              new Date(exitAt) -
+                              new Date(entryAt)
+                            ) /
+                            60000
+                          )
                         )
-                      )
-                    : 0
-                );
+                      : 0
+                  );
 
 
-              return {
-                ...record,
-                visit,
-                visitId,
-                fullName,
-                entryAt,
-                exitAt,
-                entryDateKey,
-                durationMinutes
-              };
+                return {
+                  ...record,
 
-            }
-          )
+                  sourceType:
+                    'visit',
+
+                  visit,
+                  visitId,
+
+                  fullName,
+
+                  phone:
+                    visit?.phone ||
+                    visit?.telephone ||
+                    '',
+
+                  planId:
+                    'visita',
+
+                  planLabel:
+                    visit?.planLabel ||
+                    visit?.visitType ||
+                    'Visita temporal',
+
+                  entryAt,
+                  exitAt,
+
+                  entryDateKey:
+                    getLocalDateKey(
+                      entryAt
+                    ),
+
+                  durationMinutes
+                };
+
+              }
+            );
+
+
+        // ================================================
+        // MIEMBROS CON PLAN POR DÍAS (GYM-xxxxx)
+        // ================================================
+
+        const shortPlanMemberRecords =
+          memberAttendance
+            .map(
+              record => {
+
+                const memberId =
+                  record.memberId ||
+                  '';
+
+
+                const member =
+                  memberMap.get(
+                    memberId
+                  ) ||
+                  null;
+
+
+                if (!member) {
+                  return null;
+                }
+
+
+                const planInfo =
+                  getPlanInfo(
+                    member
+                  );
+
+
+                // Mensual y anual NO pertenecen a Visitas.
+                if (
+                  !planInfo.isDayPlan
+                ) {
+                  return null;
+                }
+
+
+                const entryAt =
+                  record.entryAt ||
+                  record.createdAt ||
+                  null;
+
+
+                const exitAt =
+                  record.exitAt ||
+                  null;
+
+
+                const durationMinutes =
+                  Number(
+                    record.durationMinutes ||
+                    0
+                  ) ||
+                  (
+                    entryAt &&
+                    exitAt
+                      ? Math.max(
+                          0,
+                          Math.round(
+                            (
+                              new Date(exitAt) -
+                              new Date(entryAt)
+                            ) /
+                            60000
+                          )
+                        )
+                      : 0
+                  );
+
+
+                const fullName =
+                  record.memberName ||
+                  `${member?.firstName || ''} ${member?.lastName || ''}`.trim() ||
+                  'Miembro';
+
+
+                return {
+                  ...record,
+
+                  sourceType:
+                    'day-plan-member',
+
+                  visit:
+                    null,
+
+                  visitId:
+                    memberId,
+
+                  member,
+
+                  fullName,
+
+                  phone:
+                    member?.phone ||
+                    '',
+
+                  profilePhoto:
+                    record.profilePhoto ||
+                    member?.profilePhoto ||
+                    null,
+
+                  planId:
+                    planInfo.planId,
+
+                  planLabel:
+                    planInfo.planLabel,
+
+                  planDays:
+                    planInfo.days,
+
+                  entryAt,
+                  exitAt,
+
+                  entryDateKey:
+                    getLocalDateKey(
+                      entryAt
+                    ),
+
+                  durationMinutes
+                };
+
+              }
+            )
+            .filter(
+              Boolean
+            );
+
+
+        return [
+          ...temporaryVisitRecords,
+          ...shortPlanMemberRecords
+        ]
           .filter(
             record =>
               Boolean(
@@ -471,7 +860,9 @@ const VisitsPage = () => {
       },
       [
         attendance,
-        visitMap
+        visitMap,
+        memberAttendance,
+        memberMap
       ]
     );
 
@@ -515,6 +906,7 @@ const VisitsPage = () => {
                   term
                 ) ||
               String(
+                record.phone ||
                 record.visit?.phone ||
                 ''
               )
@@ -717,7 +1109,7 @@ const VisitsPage = () => {
               </h1>
 
               <p className="text-gray-400">
-                Historial diario de accesos temporales de visitantes.
+                Accesos de visitas temporales y miembros con planes por días.
               </p>
 
             </div>
@@ -729,7 +1121,7 @@ const VisitsPage = () => {
                 type="button"
                 onClick={() =>
                   navigate(
-                    '/visits/access'
+                    '/access'
                   )
                 }
                 className="px-4 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white hover:border-[#00ff88] flex items-center gap-2"
@@ -746,19 +1138,15 @@ const VisitsPage = () => {
 
               <button
                 type="button"
-                onClick={() =>
-                  navigate(
-                    '/visits/register'
-                  )
-                }
+                onClick={loadData}
                 className="px-4 py-2.5 bg-[#00ff88] text-black rounded-xl font-bold hover:bg-[#00cc6a] flex items-center gap-2"
               >
 
-                <Plus
+                <UserCheck
                   size={18}
                 />
 
-                Registrar visita
+                Actualizar historial
 
               </button>
 
@@ -852,7 +1240,7 @@ const VisitsPage = () => {
             <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-5">
               <div className="flex justify-between">
                 <div>
-                  <p className="text-gray-400 text-xs">Visitas del día</p>
+                  <p className="text-gray-400 text-xs">Accesos temporales</p>
                   <p className="text-white text-2xl font-bold mt-1">
                     {selectedDayRecords.length}
                   </p>
@@ -913,10 +1301,10 @@ const VisitsPage = () => {
               />
               <div>
                 <p className="text-white text-sm font-medium">
-                  Solo visitas temporales
+                  Visitas y planes por días
                 </p>
                 <p className="text-gray-400 text-sm mt-1">
-                  Este apartado muestra únicamente accesos de visitantes por día. Las asistencias normales de miembros continúan en Asistencias.
+                  Este apartado muestra visitas temporales y accesos de miembros con planes por días (7 y 15 días). Los planes mensuales y anuales continúan únicamente en Asistencias.
                 </p>
               </div>
             </div>
@@ -962,7 +1350,7 @@ const VisitsPage = () => {
                         No hay visitas para este día
                       </h3>
                       <p className="text-gray-400 text-sm mt-2">
-                        Cambia la fecha o registra una nueva visita temporal.
+                        Cambia la fecha o registra un acceso de una visita o de un miembro con plan por días.
                       </p>
                     </div>
 
@@ -995,7 +1383,8 @@ const VisitsPage = () => {
 
                                   const method =
                                     getMethodData(
-                                      record.method
+                                      record.method ||
+                                      record.entryMethod
                                     );
 
                                   const MethodIcon =
@@ -1018,6 +1407,10 @@ const VisitsPage = () => {
                                         <p className="text-gray-500 text-xs font-mono mt-1">
                                           {record.visitId || 'VISITA'}
                                         </p>
+
+                                        <span className="inline-flex mt-2 px-2 py-0.5 rounded-full bg-[#00ff88]/10 text-[#00ff88] text-[11px] font-semibold">
+                                          {record.planLabel || 'Visita temporal'}
+                                        </span>
                                       </td>
 
 

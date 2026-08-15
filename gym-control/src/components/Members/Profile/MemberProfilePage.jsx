@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   User,
@@ -43,6 +43,16 @@ import { getMemberById, saveMember } from '../../../utils/memberId';
 import WhatsAppButton from '../../WhatsApp/WhatsAppButton';
 import WhatsAppHistory from '../../WhatsApp/WhatsAppHistory';
 import { getSuggestedWhatsAppType } from '../../../services/whatsappService';
+
+import {
+  getCurrentSession
+} from '../../../services/authService';
+
+import {
+  addCredentialHistoryEvent,
+  getCredentialActionLabel,
+  getCredentialHistoryByMember
+} from '../../../utils/credentialHistory';
 
 
 // ======================================================
@@ -261,6 +271,17 @@ const MemberProfilePage = () => {
   const navigate = useNavigate();
   const { id } = useParams();
 
+  const credentialRef =
+    useRef(null);
+
+  const currentSession =
+    getCurrentSession();
+
+  const [
+    credentialHistory,
+    setCredentialHistory
+  ] = useState([]);
+
   // ======================================================
   // CARGAR EL MIEMBRO REAL DESDE LOCALSTORAGE
   // ======================================================
@@ -292,6 +313,56 @@ const MemberProfilePage = () => {
     };
   }, [id]);
 
+
+  // ======================================================
+  // HISTORIAL DE CREDENCIALES
+  // ======================================================
+
+  useEffect(() => {
+
+    const loadCredentialHistory =
+      () => {
+
+        setCredentialHistory(
+          getCredentialHistoryByMember(
+            id
+          )
+        );
+
+      };
+
+
+    loadCredentialHistory();
+
+
+    window.addEventListener(
+      'gym-credential-history-update',
+      loadCredentialHistory
+    );
+
+    window.addEventListener(
+      'gym-storage-update',
+      loadCredentialHistory
+    );
+
+
+    return () => {
+
+      window.removeEventListener(
+        'gym-credential-history-update',
+        loadCredentialHistory
+      );
+
+      window.removeEventListener(
+        'gym-storage-update',
+        loadCredentialHistory
+      );
+
+    };
+
+  }, [id]);
+
+
   // La suscripción vive dentro del miembro guardado.
   const subscriptionData = memberData?.subscription || {
     plan: '',
@@ -315,6 +386,99 @@ const MemberProfilePage = () => {
     : 'Cargando miembro...';
 
   const memberId = memberData?.id || id || '';
+
+
+  const registerCredentialEvent =
+    (
+      action,
+      metadata = {}
+    ) => {
+
+      addCredentialHistoryEvent({
+        memberId,
+        memberName:
+          fullName,
+        action,
+        source:
+          'profile',
+        actor:
+          currentSession,
+        metadata
+      });
+
+    };
+
+
+  const handleToggleAccessMethod =
+    (
+      method
+    ) => {
+
+      if (
+        !memberData ||
+        !['qr', 'pin', 'face'].includes(
+          method
+        )
+      ) {
+
+        return;
+
+      }
+
+
+      const currentMethod =
+        memberData?.access?.[method] ||
+        {};
+
+
+      const nextEnabled =
+        currentMethod.enabled !==
+        true;
+
+
+      const updatedMember = {
+        ...memberData,
+
+        access: {
+          ...(memberData.access || {}),
+
+          [method]: {
+            ...currentMethod,
+
+            enabled:
+              nextEnabled,
+
+            updatedAt:
+              new Date()
+                .toISOString()
+          }
+        },
+
+        updatedAt:
+          new Date()
+            .toISOString()
+      };
+
+
+      saveMember(
+        updatedMember
+      );
+
+      setMemberData(
+        updatedMember
+      );
+
+
+      registerCredentialEvent(
+        nextEnabled
+          ? 'method_enabled'
+          : 'method_disabled',
+        {
+          method
+        }
+      );
+
+    };
 
   // Calcular días restantes
   // Conservamos la función original, pero ahora acepta todos los formatos
@@ -653,8 +817,1784 @@ const MemberProfilePage = () => {
     token: memberData?.access?.qr?.token || ''
   });
 
+
+  // ======================================================
+  // CREDENCIAL DIGITAL / DESCARGAS
+  // ======================================================
+
+  const sanitizeFileName = (value) => {
+    return String(value || 'miembro')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9_-]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  };
+
+
+  const downloadBlob = (
+    blob,
+    fileName
+  ) => {
+
+    const url =
+      URL.createObjectURL(
+        blob
+      );
+
+    const link =
+      document.createElement(
+        'a'
+      );
+
+    link.href =
+      url;
+
+    link.download =
+      fileName;
+
+    document.body.appendChild(
+      link
+    );
+
+    link.click();
+    link.remove();
+
+    setTimeout(
+      () =>
+        URL.revokeObjectURL(
+          url
+        ),
+      1000
+    );
+
+  };
+
+
+  const loadImageFromSource = (
+    source
+  ) => {
+
+    return new Promise(
+      (
+        resolve,
+        reject
+      ) => {
+
+        const image =
+          new Image();
+
+        image.onload =
+          () =>
+            resolve(
+              image
+            );
+
+        image.onerror =
+          () =>
+            reject(
+              new Error(
+                'No fue posible cargar la imagen.'
+              )
+            );
+
+        image.crossOrigin =
+          'anonymous';
+
+        image.src =
+          source;
+
+      }
+    );
+
+  };
+
+
+  const getDownloadQrSvg =
+    () => {
+
+      return document.querySelector(
+        `[data-download-member-qr="${memberId}"] svg`
+      );
+
+    };
+
+
+  const getQrImage =
+    async () => {
+
+      const svgElement =
+        getDownloadQrSvg();
+
+      if (
+        !svgElement
+      ) {
+
+        throw new Error(
+          'No se encontró el código QR del miembro.'
+        );
+
+      }
+
+
+      const serializer =
+        new XMLSerializer();
+
+      let source =
+        serializer.serializeToString(
+          svgElement
+        );
+
+
+      if (
+        !source.includes(
+          'xmlns='
+        )
+      ) {
+
+        source =
+          source.replace(
+            '<svg',
+            '<svg xmlns="http://www.w3.org/2000/svg"'
+          );
+
+      }
+
+
+      const blob =
+        new Blob(
+          [
+            source
+          ],
+          {
+            type:
+              'image/svg+xml;charset=utf-8'
+          }
+        );
+
+
+      const objectUrl =
+        URL.createObjectURL(
+          blob
+        );
+
+
+      try {
+
+        return await loadImageFromSource(
+          objectUrl
+        );
+
+      } finally {
+
+        setTimeout(
+          () =>
+            URL.revokeObjectURL(
+              objectUrl
+            ),
+          1000
+        );
+
+      }
+
+    };
+
+
+  const handleDownloadQr =
+    async () => {
+
+      if (
+        !memberData?.access?.qr?.enabled ||
+        !memberData?.access?.qr?.token
+      ) {
+
+        window.alert(
+          'Este miembro todavía no tiene un código QR disponible.'
+        );
+
+        return;
+
+      }
+
+
+      try {
+
+        const qrImage =
+          await getQrImage();
+
+        const canvas =
+          document.createElement(
+            'canvas'
+          );
+
+        canvas.width =
+          1200;
+
+        canvas.height =
+          1200;
+
+
+        const context =
+          canvas.getContext(
+            '2d'
+          );
+
+
+        context.fillStyle =
+          '#ffffff';
+
+        context.fillRect(
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        );
+
+
+        context.drawImage(
+          qrImage,
+          90,
+          90,
+          1020,
+          1020
+        );
+
+
+        canvas.toBlob(
+          blob => {
+
+            if (!blob) {
+              return;
+            }
+
+            downloadBlob(
+              blob,
+              `QR_${sanitizeFileName(fullName)}_${memberId}.png`
+            );
+
+          },
+          'image/png',
+          1
+        );
+
+      } catch (
+        error
+      ) {
+
+        console.error(
+          'Error descargando QR:',
+          error
+        );
+
+        window.alert(
+          'No fue posible descargar el código QR.'
+        );
+
+      }
+
+    };
+
+
+  const drawRoundedRect = (
+    context,
+    x,
+    y,
+    width,
+    height,
+    radius
+  ) => {
+
+    const r =
+      Math.min(
+        radius,
+        width / 2,
+        height / 2
+      );
+
+    context.beginPath();
+
+    context.moveTo(
+      x + r,
+      y
+    );
+
+    context.arcTo(
+      x + width,
+      y,
+      x + width,
+      y + height,
+      r
+    );
+
+    context.arcTo(
+      x + width,
+      y + height,
+      x,
+      y + height,
+      r
+    );
+
+    context.arcTo(
+      x,
+      y + height,
+      x,
+      y,
+      r
+    );
+
+    context.arcTo(
+      x,
+      y,
+      x + width,
+      y,
+      r
+    );
+
+    context.closePath();
+
+  };
+
+
+  const drawFittedText = (
+    context,
+    textValue,
+    x,
+    y,
+    maxWidth,
+    initialSize,
+    minSize = 24,
+    fontWeight = 700
+  ) => {
+
+    let size =
+      initialSize;
+
+    const value =
+      String(
+        textValue ||
+        ''
+      );
+
+
+    while (
+      size >
+        minSize
+    ) {
+
+      context.font =
+        `${fontWeight} ${size}px Arial, sans-serif`;
+
+      if (
+        context.measureText(
+          value
+        ).width <=
+        maxWidth
+      ) {
+
+        break;
+
+      }
+
+      size -=
+        2;
+
+    }
+
+
+    context.fillText(
+      value,
+      x,
+      y,
+      maxWidth
+    );
+
+  };
+
+
+  const createCredentialCanvas =
+    async () => {
+
+      if (
+        !memberData?.access?.qr?.enabled ||
+        !memberData?.access?.qr?.token
+      ) {
+
+        throw new Error(
+          'El miembro no tiene un QR habilitado.'
+        );
+
+      }
+
+
+      // Proporción aproximada CR80 / tarjeta bancaria.
+      const canvas =
+        document.createElement(
+          'canvas'
+        );
+
+      canvas.width =
+        1012;
+
+      canvas.height =
+        638;
+
+
+      const context =
+        canvas.getContext(
+          '2d'
+        );
+
+
+      // FONDO
+      context.fillStyle =
+        '#090a0a';
+
+      context.fillRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
+
+      // MARCO
+      context.strokeStyle =
+        '#00ff88';
+
+      context.lineWidth =
+        4;
+
+      drawRoundedRect(
+        context,
+        8,
+        8,
+        canvas.width - 16,
+        canvas.height - 16,
+        42
+      );
+
+      context.stroke();
+
+
+      // FRANJA SUPERIOR
+      const gradient =
+        context.createLinearGradient(
+          0,
+          0,
+          canvas.width,
+          0
+        );
+
+      gradient.addColorStop(
+        0,
+        '#00ff88'
+      );
+
+      gradient.addColorStop(
+        1,
+        '#008f55'
+      );
+
+      context.fillStyle =
+        gradient;
+
+      drawRoundedRect(
+        context,
+        8,
+        8,
+        canvas.width - 16,
+        92,
+        38
+      );
+
+      context.fill();
+
+      context.fillRect(
+        8,
+        55,
+        canvas.width - 16,
+        45
+      );
+
+
+      context.fillStyle =
+        '#04110a';
+
+      context.font =
+        '900 35px Arial, sans-serif';
+
+      context.fillText(
+        'GYM CONTROL',
+        48,
+        62
+      );
+
+
+      context.font =
+        '600 17px Arial, sans-serif';
+
+      context.fillText(
+        'CREDENCIAL DIGITAL DE ACCESO',
+        50,
+        87
+      );
+
+
+      // FOTO
+      const photoX =
+        58;
+
+      const photoY =
+        148;
+
+      const photoSize =
+        238;
+
+
+      context.save();
+
+      context.beginPath();
+
+      context.arc(
+        photoX +
+          photoSize / 2,
+        photoY +
+          photoSize / 2,
+        photoSize / 2,
+        0,
+        Math.PI *
+          2
+      );
+
+      context.closePath();
+
+      context.clip();
+
+
+      if (
+        memberData?.profilePhoto
+      ) {
+
+        try {
+
+          const profileImage =
+            await loadImageFromSource(
+              memberData.profilePhoto
+            );
+
+          const sourceRatio =
+            profileImage.width /
+            profileImage.height;
+
+          let sourceWidth =
+            profileImage.width;
+
+          let sourceHeight =
+            profileImage.height;
+
+          let sourceX =
+            0;
+
+          let sourceY =
+            0;
+
+
+          if (
+            sourceRatio >
+            1
+          ) {
+
+            sourceWidth =
+              profileImage.height;
+
+            sourceX =
+              (
+                profileImage.width -
+                sourceWidth
+              ) /
+              2;
+
+          } else {
+
+            sourceHeight =
+              profileImage.width;
+
+            sourceY =
+              (
+                profileImage.height -
+                sourceHeight
+              ) /
+              2;
+
+          }
+
+
+          context.drawImage(
+            profileImage,
+            sourceX,
+            sourceY,
+            sourceWidth,
+            sourceHeight,
+            photoX,
+            photoY,
+            photoSize,
+            photoSize
+          );
+
+        } catch (
+          error
+        ) {
+
+          context.fillStyle =
+            '#1a1a1a';
+
+          context.fillRect(
+            photoX,
+            photoY,
+            photoSize,
+            photoSize
+          );
+
+        }
+
+      } else {
+
+        context.fillStyle =
+          '#1a1a1a';
+
+        context.fillRect(
+          photoX,
+          photoY,
+          photoSize,
+          photoSize
+        );
+
+      }
+
+
+      context.restore();
+
+
+      context.strokeStyle =
+        '#00ff88';
+
+      context.lineWidth =
+        6;
+
+      context.beginPath();
+
+      context.arc(
+        photoX +
+          photoSize / 2,
+        photoY +
+          photoSize / 2,
+        photoSize / 2 +
+          3,
+        0,
+        Math.PI *
+          2
+      );
+
+      context.stroke();
+
+
+      // DATOS
+      const dataX =
+        342;
+
+      context.fillStyle =
+        '#7c8a83';
+
+      context.font =
+        '600 18px Arial, sans-serif';
+
+      context.fillText(
+        'MIEMBRO',
+        dataX,
+        162
+      );
+
+
+      context.fillStyle =
+        '#ffffff';
+
+      drawFittedText(
+        context,
+        fullName,
+        dataX,
+        213,
+        350,
+        38,
+        24,
+        800
+      );
+
+
+      context.fillStyle =
+        '#00ff88';
+
+      context.font =
+        '700 25px monospace';
+
+      context.fillText(
+        memberId,
+        dataX,
+        252
+      );
+
+
+      const planLabel =
+        subscriptionData.planLabel ||
+        subscriptionData.plan ||
+        'Sin plan';
+
+
+      context.fillStyle =
+        '#7c8a83';
+
+      context.font =
+        '600 16px Arial, sans-serif';
+
+      context.fillText(
+        'PLAN',
+        dataX,
+        310
+      );
+
+
+      context.fillStyle =
+        '#ffffff';
+
+      context.font =
+        '700 24px Arial, sans-serif';
+
+      context.fillText(
+        planLabel,
+        dataX,
+        340,
+        340
+      );
+
+
+      context.fillStyle =
+        '#7c8a83';
+
+      context.font =
+        '600 16px Arial, sans-serif';
+
+      context.fillText(
+        'VIGENCIA',
+        dataX,
+        392
+      );
+
+
+      context.fillStyle =
+        '#ffffff';
+
+      context.font =
+        '600 21px Arial, sans-serif';
+
+      context.fillText(
+        subscriptionData.endDate
+          ? formatSubscriptionDate(
+              subscriptionData.endDate
+            )
+          : 'Sin vigencia',
+        dataX,
+        422,
+        340
+      );
+
+
+      // ESTADO
+      const isActive =
+        subscriptionData.status ===
+          'active' &&
+        memberData?.accessBlocked !==
+          true;
+
+
+      context.fillStyle =
+        isActive
+          ? '#00ff88'
+          : '#ff5d5d';
+
+      drawRoundedRect(
+        context,
+        dataX,
+        458,
+        196,
+        44,
+        20
+      );
+
+      context.fill();
+
+
+      context.fillStyle =
+        '#07100b';
+
+      context.font =
+        '800 17px Arial, sans-serif';
+
+      context.fillText(
+        isActive
+          ? 'ACCESO ACTIVO'
+          : 'ACCESO BLOQUEADO',
+        dataX +
+          18,
+        486
+      );
+
+
+      // QR
+      const qrImage =
+        await getQrImage();
+
+      const qrBackgroundX =
+        726;
+
+      const qrBackgroundY =
+        150;
+
+      const qrBackgroundSize =
+        235;
+
+
+      context.fillStyle =
+        '#ffffff';
+
+      drawRoundedRect(
+        context,
+        qrBackgroundX,
+        qrBackgroundY,
+        qrBackgroundSize,
+        qrBackgroundSize,
+        24
+      );
+
+      context.fill();
+
+
+      context.drawImage(
+        qrImage,
+        qrBackgroundX +
+          17,
+        qrBackgroundY +
+          17,
+        qrBackgroundSize -
+          34,
+        qrBackgroundSize -
+          34
+      );
+
+
+      context.fillStyle =
+        '#ffffff';
+
+      context.font =
+        '700 16px Arial, sans-serif';
+
+      context.textAlign =
+        'center';
+
+      context.fillText(
+        'ESCANEA PARA ACCEDER',
+        qrBackgroundX +
+          qrBackgroundSize /
+          2,
+        qrBackgroundY +
+          qrBackgroundSize +
+          32
+      );
+
+
+      // PIE
+      context.textAlign =
+        'left';
+
+      context.fillStyle =
+        '#6c7772';
+
+      context.font =
+        '500 15px Arial, sans-serif';
+
+      context.fillText(
+        'Credencial personal e intransferible',
+        58,
+        576
+      );
+
+
+      context.textAlign =
+        'right';
+
+      context.fillStyle =
+        '#00ff88';
+
+      context.font =
+        '700 15px Arial, sans-serif';
+
+      context.fillText(
+        'QR · ROSTRO · PIN',
+        952,
+        576
+      );
+
+
+      return canvas;
+
+    };
+
+
+  const handleDownloadCredential =
+    async () => {
+
+      if (
+        !credentialRef.current
+      ) {
+
+        window.alert(
+          'No se encontró la credencial digital.'
+        );
+
+        return;
+
+      }
+
+
+      try {
+
+        const html2canvasModule =
+          await import(
+            'html2canvas'
+          );
+
+        const html2canvas =
+          html2canvasModule.default;
+
+
+        const canvas =
+          await html2canvas(
+            credentialRef.current,
+            {
+              scale:
+                3,
+
+              backgroundColor:
+                null,
+
+              useCORS:
+                true,
+
+              allowTaint:
+                true
+            }
+          );
+
+
+        const link =
+          document.createElement(
+            'a'
+          );
+
+        link.download =
+          `Credencial-${memberId}.png`;
+
+        link.href =
+          canvas.toDataURL(
+            'image/png'
+          );
+
+        link.click();
+
+            registerCredentialEvent(
+              'qr_downloaded'
+            );
+
+      } catch (
+        error
+      ) {
+
+        console.error(
+          'Error descargando credencial:',
+          error
+        );
+
+        window.alert(
+          'No fue posible descargar la credencial.'
+        );
+
+      }
+
+    };
+
+
+  const handlePrintCredential =
+    async () => {
+
+      if (
+        !credentialRef.current
+      ) {
+
+        window.alert(
+          'No se encontró la credencial digital.'
+        );
+
+        return;
+
+      }
+
+
+      const printWindow =
+        window.open(
+          '',
+          '_blank',
+          'width=700,height=900'
+        );
+
+
+      if (
+        !printWindow
+      ) {
+
+        window.alert(
+          'El navegador bloqueó la ventana de impresión.'
+        );
+
+        return;
+
+      }
+
+
+      try {
+
+        const html2canvasModule =
+          await import(
+            'html2canvas'
+          );
+
+        const html2canvas =
+          html2canvasModule.default;
+
+
+        const canvas =
+          await html2canvas(
+            credentialRef.current,
+            {
+              scale:
+                3,
+
+              backgroundColor:
+                null,
+
+              useCORS:
+                true,
+
+              allowTaint:
+                true
+            }
+          );
+
+
+        const image =
+          canvas.toDataURL(
+            'image/png'
+          );
+
+
+        printWindow.document.write(`
+          <!doctype html>
+          <html>
+            <head>
+
+              <title>
+                Credencial ${memberId}
+              </title>
+
+              <style>
+
+                * {
+                  box-sizing: border-box;
+                }
+
+                @page {
+                  size: auto;
+                  margin: 12mm;
+                }
+
+                body {
+                  margin: 0;
+                  min-height: 100vh;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  padding: 20px;
+                  background: #ffffff;
+                }
+
+                img {
+                  width: 100%;
+                  max-width: 384px;
+                  height: auto;
+                  display: block;
+                }
+
+                @media print {
+
+                  body {
+                    padding: 0;
+                  }
+
+                }
+
+              </style>
+
+            </head>
+
+            <body>
+
+              <img
+                src="${image}"
+                alt="Credencial ${memberId}"
+              />
+
+              <script>
+
+                window.onload =
+                  function () {
+
+                    window.print();
+
+                    window.close();
+
+                  };
+
+              <\/script>
+
+            </body>
+
+          </html>
+        `);
+
+
+        printWindow.document.close();
+
+        registerCredentialEvent(
+          'credential_printed'
+        );
+
+      } catch (
+        error
+      ) {
+
+        console.error(
+          'Error imprimiendo credencial:',
+          error
+        );
+
+        printWindow.close();
+
+        window.alert(
+          'No fue posible imprimir la credencial.'
+        );
+
+      }
+
+    };
+
+
+  const renderCredentialCard =
+    () => {
+
+      const accessEnabled =
+        subscriptionData.status ===
+          'active' &&
+        memberData?.accessBlocked !==
+          true;
+
+
+      return (
+
+        <div
+          ref={
+            credentialRef
+          }
+          id="credential-print-profile"
+          className="max-w-sm mx-auto rounded-2xl overflow-hidden shadow-2xl relative"
+          style={{
+            backgroundImage:
+              "url('/img/crede.png')",
+
+            backgroundSize:
+              'cover',
+
+            backgroundPosition:
+              'center',
+
+            backgroundRepeat:
+              'no-repeat'
+          }}
+        >
+
+          <div className="absolute inset-0 bg-black/40" />
+
+
+          <div className="relative z-10 p-6 flex flex-col items-center min-h-[380px] justify-center">
+
+            <div className="mb-4 text-center">
+
+              <p className="text-white font-bold text-xl tracking-wide drop-shadow-lg">
+                GYM CONTROL
+              </p>
+
+
+              <p className="text-gray-300 text-[10px] tracking-wider drop-shadow-lg">
+                MEMBER ACCESS
+              </p>
+
+            </div>
+
+
+            <div className="w-20 h-20 rounded-full border-2 border-[#00ff88] mx-auto mb-3 flex items-center justify-center overflow-hidden bg-[#1a1a1a]/80 backdrop-blur-sm">
+
+              {
+                memberData?.profilePhoto
+                  ? (
+
+                    <img
+                      src={
+                        memberData.profilePhoto
+                      }
+                      alt={
+                        fullName
+                      }
+                      className="w-full h-full object-cover"
+                    />
+
+                  )
+                  : (
+
+                    <span className="text-white font-bold text-xl">
+
+                      {
+                        fullName
+                          .split(
+                            ' '
+                          )
+                          .map(
+                            name =>
+                              name[0]
+                          )
+                          .join(
+                            ''
+                          )
+                          .slice(
+                            0,
+                            2
+                          )
+                          .toUpperCase()
+                      }
+
+                    </span>
+
+                  )
+              }
+
+            </div>
+
+
+            <p className="text-white font-bold text-lg drop-shadow-lg text-center">
+              {
+                fullName
+              }
+            </p>
+
+
+            <p className="text-[#00ff88] text-sm font-mono drop-shadow-lg">
+              {
+                memberId
+              }
+            </p>
+
+
+            <div className="flex justify-center my-3">
+
+              {
+                memberData?.access?.qr?.enabled &&
+                memberData?.access?.qr?.token
+                  ? (
+
+                    <div className="bg-white rounded-lg p-2 inline-block shadow-lg">
+
+                      <QRCodeSVG
+                        value={
+                          qrData
+                        }
+                        size={
+                          80
+                        }
+                        level="H"
+                        includeMargin={
+                          false
+                        }
+                        bgColor="#FFFFFF"
+                        fgColor="#000000"
+                      />
+
+                    </div>
+
+                  )
+                  : (
+
+                    <div className="w-24 h-24 rounded-lg bg-[#1a1a1a]/90 border border-[#2a2a2a] flex flex-col items-center justify-center">
+
+                      <QrCode
+                        size={32}
+                        className="text-gray-500"
+                      />
+
+                      <span className="text-gray-500 text-[9px] mt-1">
+                        SIN QR
+                      </span>
+
+                    </div>
+
+                  )
+              }
+
+            </div>
+
+
+            <div className="flex items-center justify-center gap-2 mt-1">
+
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  accessEnabled
+                    ? 'bg-[#00ff88] animate-pulse'
+                    : 'bg-red-500'
+                }`}
+              />
+
+
+              <span
+                className={`text-sm font-bold drop-shadow-lg ${
+                  accessEnabled
+                    ? 'text-[#00ff88]'
+                    : 'text-red-400'
+                }`}
+              >
+
+                {
+                  accessEnabled
+                    ? 'ACCESO HABILITADO'
+                    : 'ACCESO BLOQUEADO'
+                }
+
+              </span>
+
+            </div>
+
+
+            <p className="text-gray-300 text-xs mt-1 drop-shadow-lg text-center">
+
+              Suscripción válida hasta:{' '}
+
+              <span className="text-white">
+
+                {
+                  subscriptionData.endDate
+                    ? formatSubscriptionDate(
+                        subscriptionData.endDate
+                      )
+                    : 'Sin vigencia'
+                }
+
+              </span>
+
+            </p>
+
+
+            <p className="text-gray-400 text-[10px] mt-2 drop-shadow-lg">
+              Código personal e intransferible
+            </p>
+
+          </div>
+
+        </div>
+
+      );
+
+    };
+
+
+  const renderCredencialTab =
+    () => {
+
+      const methods = [
+        {
+          id: 'qr',
+          label: 'Código QR',
+          description: 'Permite el acceso mediante la credencial o el código QR.'
+        },
+        {
+          id: 'pin',
+          label: 'PIN personal',
+          description: 'Permite el acceso mediante el código numérico de 6 dígitos.'
+        },
+        {
+          id: 'face',
+          label: 'Reconocimiento facial',
+          description: 'Permite identificar al miembro mediante biometría facial.'
+        }
+      ];
+
+
+      return (
+
+        <div className="space-y-6">
+
+          <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6">
+
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+
+              <div>
+
+                <h3 className="text-white font-bold text-lg">
+                  Credencial digital
+                </h3>
+
+                <p className="text-gray-500 text-sm mt-1">
+                  Vista y descarga de la misma credencial generada durante el registro del miembro.
+                </p>
+
+              </div>
+
+
+              <div className="flex flex-wrap gap-2">
+
+                <button
+                  type="button"
+                  onClick={
+                    handleDownloadQr
+                  }
+                  className="px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white hover:border-[#00ff88] transition-colors flex items-center gap-2"
+                >
+                  <QrCode size={17} />
+                  Descargar QR
+                </button>
+
+
+                <button
+                  type="button"
+                  onClick={
+                    handleDownloadCredential
+                  }
+                  className="px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white hover:border-[#00ff88] transition-colors flex items-center gap-2"
+                >
+                  <Download size={17} />
+                  Descargar credencial
+                </button>
+
+
+                <button
+                  type="button"
+                  onClick={
+                    handlePrintCredential
+                  }
+                  className="px-4 py-2 bg-[#00ff88] text-black rounded-xl font-bold hover:bg-[#00cc6a] transition-colors flex items-center gap-2"
+                >
+                  <Printer size={17} />
+                  Imprimir
+                </button>
+
+              </div>
+
+            </div>
+
+
+            {
+              renderCredentialCard()
+            }
+
+          </div>
+
+
+          <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6">
+
+            <div className="flex items-start gap-3 mb-5">
+
+              <div className="w-10 h-10 rounded-xl bg-[#00ff88]/10 border border-[#00ff88]/20 flex items-center justify-center">
+                <Shield
+                  size={20}
+                  className="text-[#00ff88]"
+                />
+              </div>
+
+
+              <div>
+
+                <h3 className="text-white font-bold">
+                  Métodos de acceso
+                </h3>
+
+                <p className="text-gray-500 text-sm mt-1">
+                  Puedes deshabilitar QR, PIN o rostro de forma independiente sin eliminar los datos configurados.
+                </p>
+
+              </div>
+
+            </div>
+
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+              {
+                methods.map(
+                  method => {
+
+                    const accessData =
+                      memberData?.access?.[method.id] ||
+                      {};
+
+                    const enabled =
+                      accessData.enabled ===
+                      true;
+
+                    const configured =
+                      method.id === 'face'
+                        ? accessData.enrolled === true
+                        : accessData.configured === true;
+
+
+                    return (
+
+                      <div
+                        key={
+                          method.id
+                        }
+                        className={`rounded-xl border p-4 ${
+                          enabled
+                            ? 'bg-[#00ff88]/5 border-[#00ff88]/20'
+                            : 'bg-[#1a1a1a] border-[#2a2a2a]'
+                        }`}
+                      >
+
+                        <div className="flex items-center justify-between gap-3">
+
+                          <div>
+
+                            <p className="text-white font-bold text-sm">
+                              {
+                                method.label
+                              }
+                            </p>
+
+                            <p className={`text-xs mt-1 font-semibold ${
+                              enabled
+                                ? 'text-[#00ff88]'
+                                : 'text-gray-500'
+                            }`}>
+                              {
+                                !configured
+                                  ? 'NO CONFIGURADO'
+                                  : enabled
+                                    ? 'HABILITADO'
+                                    : 'DESHABILITADO'
+                              }
+                            </p>
+
+                          </div>
+
+
+                          <button
+                            type="button"
+                            disabled={
+                              !configured
+                            }
+                            onClick={() =>
+                              handleToggleAccessMethod(
+                                method.id
+                              )
+                            }
+                            className={`relative w-12 h-7 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                              enabled
+                                ? 'bg-[#00ff88]'
+                                : 'bg-[#2a2a2a]'
+                            }`}
+                          >
+
+                            <span className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-transform ${
+                              enabled
+                                ? 'translate-x-6'
+                                : 'translate-x-1'
+                            }`}
+                            />
+
+                          </button>
+
+                        </div>
+
+
+                        <p className="text-gray-500 text-xs mt-3 leading-relaxed">
+                          {
+                            method.description
+                          }
+                        </p>
+
+                      </div>
+
+                    );
+
+                  }
+                )
+              }
+
+            </div>
+
+
+            <div className="mt-4 p-4 rounded-xl bg-yellow-500/5 border border-yellow-500/20">
+
+              <p className="text-yellow-500 text-sm font-semibold">
+                Suscripción vencida
+              </p>
+
+              <p className="text-gray-400 text-xs mt-1">
+                Aunque un método aparezca habilitado, una suscripción vencida bloquea automáticamente nuevas entradas. Los métodos no se eliminan y vuelven a funcionar al renovar.
+              </p>
+
+            </div>
+
+          </div>
+
+
+          <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl overflow-hidden">
+
+            <div className="px-6 py-5 border-b border-[#1a1a1a]">
+
+              <h3 className="text-white font-bold">
+                Historial de credencial
+              </h3>
+
+              <p className="text-gray-500 text-sm mt-1">
+                Registro de generación, descargas, impresiones y cambios de métodos de acceso.
+              </p>
+
+            </div>
+
+
+            {
+              credentialHistory.length >
+                0
+                ? (
+
+                  <div className="divide-y divide-[#1a1a1a]">
+
+                    {
+                      credentialHistory.map(
+                        event => (
+
+                          <div
+                            key={
+                              event.id
+                            }
+                            className="px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+                          >
+
+                            <div>
+
+                              <p className="text-white font-medium text-sm">
+                                {
+                                  getCredentialActionLabel(
+                                    event.action
+                                  )
+                                }
+                              </p>
+
+                              <p className="text-gray-500 text-xs mt-1">
+                                {
+                                  new Intl.DateTimeFormat(
+                                    'es-MX',
+                                    {
+                                      day: '2-digit',
+                                      month: 'short',
+                                      year: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    }
+                                  ).format(
+                                    new Date(
+                                      event.createdAt
+                                    )
+                                  )
+                                }
+                              </p>
+
+                            </div>
+
+
+                            <div className="text-left sm:text-right">
+
+                              <p className="text-gray-400 text-xs">
+                                {
+                                  event.actor?.name ||
+                                  'Sistema'
+                                }
+                              </p>
+
+                              {
+                                event.metadata?.method &&
+                                (
+
+                                  <p className="text-[#00ff88] text-[11px] uppercase mt-1">
+                                    Método: {
+                                      event.metadata.method
+                                    }
+                                  </p>
+
+                                )
+                              }
+
+                            </div>
+
+                          </div>
+
+                        )
+                      )
+                    }
+
+                  </div>
+
+                )
+                : (
+
+                  <div className="p-8 text-center">
+
+                    <Clock
+                      size={34}
+                      className="text-gray-600 mx-auto mb-2"
+                    />
+
+                    <p className="text-gray-400">
+                      Todavía no hay movimientos de credencial registrados.
+                    </p>
+
+                  </div>
+
+                )
+            }
+
+          </div>
+
+        </div>
+
+      );
+
+    };
+
   const tabs = [
     { id: 'resumen', label: 'Resumen' },
+    { id: 'credencial', label: 'Credencial digital' },
     { id: 'suscripcion', label: 'Suscripción' },
     { id: 'asistencias', label: 'Asistencias' },
     { id: 'pagos', label: 'Pagos' },
@@ -699,10 +2639,10 @@ const MemberProfilePage = () => {
     }
   };
 
-  const alert = getAlert();
+  const subscriptionAlert = getAlert();
 
   const getAlertStyles = () => {
-    switch (alert.type) {
+    switch (subscriptionAlert.type) {
       case 'success':
         return 'bg-[#00ff88]/5 border-[#00ff88]/20';
       case 'warning':
@@ -719,6 +2659,8 @@ const MemberProfilePage = () => {
     switch (activeTab) {
       case 'resumen':
         return renderResumenTab();
+      case 'credencial':
+        return renderCredencialTab();
       case 'suscripcion':
         return renderSuscripcionTab();
       case 'asistencias':
@@ -828,28 +2770,45 @@ const MemberProfilePage = () => {
                 ? 'El código puede utilizarse mientras la suscripción permanezca activa.'
                 : 'El código no está habilitado actualmente.'}
             </p>
-            <div className="flex gap-2 mt-3">
-              <button 
-                onClick={() => navigate('/access')}
+            <div className="flex flex-wrap justify-center gap-2 mt-3">
+
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveTab(
+                    'credencial'
+                  )
+                }
                 className="px-3 py-1.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-white text-sm hover:border-[#00ff88] transition-colors flex items-center gap-1"
               >
-                <Eye size={14} />
-                Ver QR
+                <CreditCard size={14} />
+                Credencial
               </button>
-              <button 
-                onClick={() => alert('Imprimiendo credencial...')}
+
+
+              <button
+                type="button"
+                onClick={
+                  handleDownloadQr
+                }
                 className="px-3 py-1.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-white text-sm hover:border-[#00ff88] transition-colors flex items-center gap-1"
               >
-                <Printer size={14} />
-                Imprimir
+                <QrCode size={14} />
+                Descargar QR
               </button>
-              <button 
-                onClick={() => alert('Descargando QR...')}
+
+
+              <button
+                type="button"
+                onClick={
+                  handleDownloadCredential
+                }
                 className="px-3 py-1.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-white text-sm hover:border-[#00ff88] transition-colors flex items-center gap-1"
               >
                 <Download size={14} />
-                Descargar
+                Credencial PNG
               </button>
+
             </div>
           </div>
         ) : (
@@ -1344,18 +3303,18 @@ const MemberProfilePage = () => {
 
   // Funciones para acciones del menú
   const handleRegisterEntry = () => {
-    alert('Registrando entrada manual...');
+    window.alert('Registrando entrada manual...');
     // Aquí iría la lógica para registrar entrada
   };
 
   const handleRegisterExit = () => {
-    alert('Registrando salida manual...');
+    window.alert('Registrando salida manual...');
     // Aquí iría la lógica para registrar salida
   };
 
   const handleBlockAccess = () => {
     if (!blockReason.trim()) {
-      alert('Debes escribir un motivo');
+      window.alert('Debes escribir un motivo');
       return;
     }
 
@@ -1376,12 +3335,12 @@ const MemberProfilePage = () => {
     setShowBlockModal(false);
     setBlockReason('');
 
-    alert('Acceso bloqueado correctamente');
+    window.alert('Acceso bloqueado correctamente');
   };
 
   const handleDeactivateMember = () => {
     if (!deactivateReason) {
-      alert('Debes seleccionar un motivo');
+      window.alert('Debes seleccionar un motivo');
       return;
     }
 
@@ -1403,7 +3362,7 @@ const MemberProfilePage = () => {
     setShowDeactivateModal(false);
     setDeactivateReason('');
 
-    alert('Miembro dado de baja correctamente');
+    window.alert('Miembro dado de baja correctamente');
     navigate('/members');
   };
 
@@ -1532,20 +3491,52 @@ const MemberProfilePage = () => {
                 </button>
                 {showMoreMenu && (
                   <div className="absolute right-0 top-full mt-2 w-56 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl shadow-2xl z-10 overflow-hidden">
-                    <button 
+                    <button
+                      type="button"
                       onClick={() => {
                         setShowMoreMenu(false);
-                        navigate('/access');
+                        setActiveTab(
+                          'credencial'
+                        );
+                      }}
+                      className="w-full px-4 py-2 text-left text-gray-300 hover:bg-[#2a2a2a] transition-colors flex items-center gap-2"
+                    >
+                      <CreditCard size={16} />
+                      Ver credencial digital
+                    </button>
+
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        handleDownloadQr();
                       }}
                       className="w-full px-4 py-2 text-left text-gray-300 hover:bg-[#2a2a2a] transition-colors flex items-center gap-2"
                     >
                       <QrCode size={16} />
-                      Ver QR
+                      Descargar código QR
                     </button>
-                    <button 
+
+
+                    <button
+                      type="button"
                       onClick={() => {
                         setShowMoreMenu(false);
-                        alert('Imprimiendo credencial...');
+                        handleDownloadCredential();
+                      }}
+                      className="w-full px-4 py-2 text-left text-gray-300 hover:bg-[#2a2a2a] transition-colors flex items-center gap-2"
+                    >
+                      <Download size={16} />
+                      Descargar credencial
+                    </button>
+
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        handlePrintCredential();
                       }}
                       className="w-full px-4 py-2 text-left text-gray-300 hover:bg-[#2a2a2a] transition-colors flex items-center gap-2"
                     >
@@ -1685,12 +3676,12 @@ const MemberProfilePage = () => {
           {/* Alertas */}
           <div className={`${getAlertStyles()} border rounded-xl p-4 mb-6`}>
             <div className="flex items-center gap-3">
-              {alert.icon}
+              {subscriptionAlert.icon}
               <div className="flex-1">
-                <p className="text-white font-medium">{alert.title}</p>
-                <p className="text-gray-400 text-sm">{alert.message}</p>
+                <p className="text-white font-medium">{subscriptionAlert.title}</p>
+                <p className="text-gray-400 text-sm">{subscriptionAlert.message}</p>
               </div>
-              {alert.action && (
+              {subscriptionAlert.action && (
                 <button 
                   onClick={() => navigate(`/members/${memberId}/renew`, { 
                     state: { 
@@ -1700,7 +3691,7 @@ const MemberProfilePage = () => {
                   })}
                   className="px-4 py-1.5 bg-[#00ff88] text-black rounded-lg text-sm font-medium hover:bg-[#00cc6a] transition-colors"
                 >
-                  {alert.action}
+                  {subscriptionAlert.action}
                 </button>
               )}
             </div>
@@ -1731,6 +3722,41 @@ const MemberProfilePage = () => {
           {renderTabContent()}
         </main>
       </div>
+
+      {/* QR de alta resolución para descargas de QR y credencial */}
+      {
+        memberData?.access?.qr?.enabled &&
+        memberData?.access?.qr?.token &&
+        (
+
+          <div
+            aria-hidden="true"
+            data-download-member-qr={
+              memberId
+            }
+            className="fixed -left-[10000px] -top-[10000px] w-[512px] h-[512px] bg-white p-6 pointer-events-none"
+          >
+
+            <QRCodeSVG
+              value={
+                qrData
+              }
+              size={
+                464
+              }
+              level="H"
+              includeMargin={
+                false
+              }
+              bgColor="#FFFFFF"
+              fgColor="#000000"
+            />
+
+          </div>
+
+        )
+      }
+
 
       {/* Modal Bloquear acceso */}
       {showBlockModal && (
