@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   User,
   Mail,
@@ -39,29 +39,261 @@ import {
 import Sidebar from '../../Layout/Sidebar';
 import Header from '../../Layout/Header';
 import { QRCodeSVG } from 'qrcode.react';
+import { getMemberById, saveMember } from '../../../utils/memberId';
+import WhatsAppButton from '../../WhatsApp/WhatsAppButton';
+import WhatsAppHistory from '../../WhatsApp/WhatsAppHistory';
+import { getSuggestedWhatsAppType } from '../../../services/whatsappService';
+
+
+// ======================================================
+// STORAGE DE ASISTENCIAS
+// ======================================================
+
+const ATTENDANCE_KEY = 'gym_control_attendance';
+
+// ======================================================
+// STORAGE DE PAGOS E HISTORIAL DE SUSCRIPCIONES
+// ======================================================
+// Se agregan sin modificar las funciones de asistencias,
+// WhatsApp, QR, bloqueo ni edición del perfil.
+
+const PAYMENTS_KEY = 'gym_control_payments';
+const SUBSCRIPTION_HISTORY_KEY = 'gym_control_subscription_history';
+
+const readLocalArray = (key) => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error(`Error leyendo ${key}:`, error);
+    return [];
+  }
+};
+
+const parseAttendanceDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatAttendanceDate = (value) => {
+  const date = parseAttendanceDate(value);
+  if (!date) return '—';
+  return new Intl.DateTimeFormat('es-MX', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  }).format(date);
+};
+
+const formatAttendanceTime = (value) => {
+  const date = parseAttendanceDate(value);
+  if (!date) return '—';
+  return new Intl.DateTimeFormat('es-MX', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  }).format(date);
+};
+
+const getAttendanceDurationMinutes = (record) => {
+  if (Number(record?.durationMinutes) > 0) {
+    return Number(record.durationMinutes);
+  }
+
+  const entry = parseAttendanceDate(record?.entryAt);
+  const exit = parseAttendanceDate(record?.exitAt);
+
+  if (!entry || !exit) return 0;
+
+  return Math.max(
+    0,
+    Math.round((exit.getTime() - entry.getTime()) / 60000)
+  );
+};
+
+const formatAttendanceDuration = (minutes) => {
+  const value = Number(minutes || 0);
+  if (value <= 0) return '—';
+
+  const hours = Math.floor(value / 60);
+  const mins = value % 60;
+
+  if (hours <= 0) return `${mins} min`;
+  return `${hours}h ${mins}min`;
+};
+
+const formatAttendanceMethod = (method) => {
+  switch (String(method || '').toLowerCase()) {
+    case 'qr':
+      return 'QR';
+    case 'face':
+      return 'Rostro';
+    case 'pin':
+      return 'PIN';
+    case 'manual':
+      return 'Manual';
+    default:
+      return method || 'Desconocido';
+  }
+};
+
+
+// ======================================================
+// FECHAS DE SUSCRIPCIÓN
+// ======================================================
+// Acepta tanto ISO como formatos usados por el sistema:
+// 15 sep 2026, 15 sept 2026, 15 septiembre 2026,
+// 15 oct 2026, etc.
+
+const SUBSCRIPTION_MONTHS = {
+  ene: 0,
+  enero: 0,
+  feb: 1,
+  febrero: 1,
+  mar: 2,
+  marzo: 2,
+  abr: 3,
+  abril: 3,
+  may: 4,
+  mayo: 4,
+  jun: 5,
+  junio: 5,
+  jul: 6,
+  julio: 6,
+  ago: 7,
+  agosto: 7,
+  sep: 8,
+  sept: 8,
+  septiembre: 8,
+  oct: 9,
+  octubre: 9,
+  nov: 10,
+  noviembre: 10,
+  dic: 11,
+  diciembre: 11
+};
+
+const parseSubscriptionDate = (value) => {
+  if (!value) return null;
+
+  // YYYY-MM-DD se interpreta de forma local para evitar desfases por UTC.
+  const isoDateOnly = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (isoDateOnly) {
+    const [, year, month, day] = isoDateOnly;
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      23,
+      59,
+      59,
+      999
+    );
+  }
+
+  const direct = new Date(value);
+
+  if (!Number.isNaN(direct.getTime())) {
+    return direct;
+  }
+
+  const cleanValue = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/\./g, '')
+    .replace(/\s+/g, ' ');
+
+  const parts = cleanValue.split(' ');
+
+  if (parts.length !== 3) return null;
+
+  const day = Number(parts[0]);
+  const month = SUBSCRIPTION_MONTHS[parts[1]];
+  const year = Number(parts[2]);
+
+  if (
+    Number.isNaN(day) ||
+    month === undefined ||
+    Number.isNaN(year)
+  ) {
+    return null;
+  }
+
+  return new Date(
+    year,
+    month,
+    day,
+    23,
+    59,
+    59,
+    999
+  );
+};
+
+const formatSubscriptionDate = (value) => {
+  const date = parseSubscriptionDate(value);
+
+  if (!date) return value || '—';
+
+  return new Intl.DateTimeFormat('es-MX', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  }).format(date);
+};
+
+const formatPaymentMoney = (value, currency = 'MXN') => {
+  const amount = Number(value || 0);
+
+  return new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency: currency === 'USD' ? 'USD' : 'MXN',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(Number.isFinite(amount) ? amount : 0);
+};
 
 const MemberProfilePage = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  
-  // Obtener datos del miembro (desde el registro o desde la lista)
-  const memberData = location.state?.memberData || {
-    firstName: '',
-    lastName: '',
-    phone: '',
-    email: '',
-    id: 'GYM-00000',
-    registrationDate: 'Fecha no disponible',
-    birthDate: '',
-    emergencyContact: '',
-    emergencyPhone: '',
-    gender: '',
-    notes: '',
-    profilePhoto: null
-  };
+  const { id } = useParams();
 
-  // Obtener datos de suscripción (desde el registro o vacío)
-  const subscriptionData = location.state?.subscriptionData || {
+  // ======================================================
+  // CARGAR EL MIEMBRO REAL DESDE LOCALSTORAGE
+  // ======================================================
+  const [memberData, setMemberData] = useState(null);
+  const [loadingMember, setLoadingMember] = useState(true);
+
+  useEffect(() => {
+    const loadMember = () => {
+      const storedMember = getMemberById(id);
+
+      console.log('👤 Perfil cargado desde localStorage:', storedMember);
+
+      setMemberData(storedMember);
+      setLoadingMember(false);
+    };
+
+    loadMember();
+
+    const handleStorageChange = () => {
+      loadMember();
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('gym-storage-update', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('gym-storage-update', handleStorageChange);
+    };
+  }, [id]);
+
+  // La suscripción vive dentro del miembro guardado.
+  const subscriptionData = memberData?.subscription || {
     plan: '',
     days: 0,
     startDate: '',
@@ -78,40 +310,277 @@ const MemberProfilePage = () => {
   const [blockReason, setBlockReason] = useState('');
   const [deactivateReason, setDeactivateReason] = useState('');
 
-  const fullName = `${memberData.firstName} ${memberData.lastName}`.trim() || 'Nuevo miembro';
-  const memberId = memberData.id || 'GYM-00000';
+  const fullName = memberData
+    ? `${memberData.firstName || ''} ${memberData.lastName || ''}`.trim() || 'Miembro'
+    : 'Cargando miembro...';
+
+  const memberId = memberData?.id || id || '';
 
   // Calcular días restantes
+  // Conservamos la función original, pero ahora acepta todos los formatos
+  // de fecha que ya utiliza el sistema.
   const calculateDaysRemaining = () => {
-    if (!subscriptionData.endDate || subscriptionData.endDate === 'Fecha no disponible') return 0;
+    if (
+      !subscriptionData.endDate ||
+      subscriptionData.endDate === 'Fecha no disponible'
+    ) {
+      return 0;
+    }
+
     try {
+      const endDate = parseSubscriptionDate(subscriptionData.endDate);
+
+      if (!endDate) {
+        return 0;
+      }
+
       const today = new Date();
-      const parts = subscriptionData.endDate.split(' ');
-      const day = parseInt(parts[0]);
-      const month = parts[1];
-      const year = parseInt(parts[2]);
-      const monthMap = { 'Ene': 0, 'Feb': 1, 'Mar': 2, 'Abr': 3, 'May': 4, 'Jun': 5, 'Jul': 6, 'Ago': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dic': 11 };
-      const endDate = new Date(year, monthMap[month], day);
-      const diffTime = endDate - today;
+
+      today.setHours(0, 0, 0, 0);
+      endDate.setHours(23, 59, 59, 999);
+
+      const diffTime = endDate.getTime() - today.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
       return diffDays > 0 ? diffDays : 0;
-    } catch (e) {
+    } catch (error) {
+      console.error('Error calculando días restantes:', error);
       return 0;
     }
   };
 
   const daysRemaining = calculateDaysRemaining();
 
-  // Datos de asistencias - VACÍOS
-  const [attendanceData] = useState([]);
-  
-  // Datos de pagos - VACÍOS
-  const [paymentData] = useState([]);
-  
-  // Datos de historial de suscripciones - VACÍOS
-  const [subscriptionHistory] = useState([]);
+  // ======================================================
+  // ASISTENCIAS REALES DEL MIEMBRO
+  // ======================================================
+  const [attendanceData, setAttendanceData] = useState([]);
 
-  // Calcular estadísticas desde las asistencias
+  // ======================================================
+  // PAGOS REALES DEL MIEMBRO
+  // ======================================================
+  const [paymentData, setPaymentData] = useState([]);
+
+  // ======================================================
+  // HISTORIAL REAL DE SUSCRIPCIONES
+  // ======================================================
+  const [subscriptionHistory, setSubscriptionHistory] = useState([]);
+
+  useEffect(() => {
+    const loadMemberAttendance = () => {
+      const records = readLocalArray(ATTENDANCE_KEY)
+        .filter(item => item?.memberId === memberId)
+        .map(item => {
+          const durationMinutes = getAttendanceDurationMinutes(item);
+
+          return {
+            ...item,
+            date: formatAttendanceDate(item.entryAt || item.createdAt),
+            entry: formatAttendanceTime(item.entryAt),
+            exit: item.exitAt ? formatAttendanceTime(item.exitAt) : '—',
+            durationMinutes,
+            duration: formatAttendanceDuration(durationMinutes),
+            method: formatAttendanceMethod(item.method)
+          };
+        })
+        .sort((a, b) => {
+          const dateA = parseAttendanceDate(a.entryAt || a.createdAt)?.getTime() || 0;
+          const dateB = parseAttendanceDate(b.entryAt || b.createdAt)?.getTime() || 0;
+          return dateB - dateA;
+        });
+
+      console.log(`🕒 Asistencias del miembro ${memberId}:`, records);
+      setAttendanceData(records);
+    };
+
+    if (memberId) {
+      loadMemberAttendance();
+    }
+
+    window.addEventListener('storage', loadMemberAttendance);
+    window.addEventListener('gym-storage-update', loadMemberAttendance);
+
+    return () => {
+      window.removeEventListener('storage', loadMemberAttendance);
+      window.removeEventListener('gym-storage-update', loadMemberAttendance);
+    };
+  }, [memberId]);
+
+
+  // ======================================================
+  // CARGAR PAGOS E HISTORIAL DE SUSCRIPCIONES
+  // ======================================================
+  // Esto se suma a la carga de asistencias existente. No se elimina
+  // ni modifica ninguna de las funciones anteriores.
+
+  useEffect(() => {
+    const loadMemberFinancialData = () => {
+      if (!memberId) {
+        setPaymentData([]);
+        setSubscriptionHistory([]);
+        return;
+      }
+
+      // ----------------------------------------------------
+      // PAGOS
+      // ----------------------------------------------------
+
+      const payments = readLocalArray(PAYMENTS_KEY)
+        .filter(item =>
+          item?.memberId === memberId ||
+          item?.member?.id === memberId
+        )
+        .map(item => {
+          const rawDate = item.createdAt || item.date || '';
+          const paymentDate = parseSubscriptionDate(rawDate);
+
+          return {
+            ...item,
+
+            // Campos que ya consume renderPagosTab y Resumen.
+            date: paymentDate
+              ? new Intl.DateTimeFormat('es-MX', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric'
+                }).format(paymentDate)
+              : formatSubscriptionDate(rawDate),
+
+            concept:
+              item.concept ||
+              item.planLabel ||
+              'Pago de suscripción',
+
+            period:
+              item.period ||
+              (
+                item.startDate ||
+                item.endDate
+                  ? `${item.startDate || '—'} - ${item.endDate || '—'}`
+                  : '—'
+              ),
+
+            method:
+              item.paymentMethod ||
+              item.method ||
+              'No registrado',
+
+            amount:
+              formatPaymentMoney(
+                item.amount,
+                item.currency || 'MXN'
+              ),
+
+            status:
+              String(item.status || '').toLowerCase() === 'completed'
+                ? 'Pagado'
+                : item.status || 'Pagado',
+
+            _sortDate:
+              paymentDate?.getTime() || 0
+          };
+        })
+        .sort((a, b) => b._sortDate - a._sortDate);
+
+      // ----------------------------------------------------
+      // HISTORIAL DE SUSCRIPCIONES
+      // ----------------------------------------------------
+
+      const history = readLocalArray(SUBSCRIPTION_HISTORY_KEY)
+        .filter(item =>
+          item?.memberId === memberId ||
+          item?.member?.id === memberId
+        )
+        .map(item => {
+          // Las renovaciones pueden guardar la suscripción dentro
+          // de item.subscription, mientras otros registros la guardan plana.
+          const storedSubscription = item.subscription || item;
+
+          const startDate =
+            storedSubscription.startDate ||
+            item.startDate ||
+            '';
+
+          const endDate =
+            storedSubscription.endDate ||
+            item.endDate ||
+            '';
+
+          const end = parseSubscriptionDate(endDate);
+          const now = new Date();
+          now.setHours(0, 0, 0, 0);
+
+          const isCurrentPeriod =
+            startDate === subscriptionData.startDate &&
+            endDate === subscriptionData.endDate;
+
+          const storedStatus =
+            storedSubscription.status ||
+            item.status ||
+            '';
+
+          let status = 'Finalizada';
+
+          if (
+            isCurrentPeriod ||
+            (
+              storedStatus === 'active' &&
+              end &&
+              end.getTime() >= now.getTime()
+            )
+          ) {
+            status = 'Activa';
+          }
+
+          const created = parseSubscriptionDate(
+            item.createdAt ||
+            storedSubscription.createdAt ||
+            startDate
+          );
+
+          return {
+            ...item,
+            ...storedSubscription,
+
+            period:
+              item.period ||
+              `${startDate || '—'} - ${endDate || '—'}`,
+
+            status,
+
+            _sortDate:
+              created?.getTime() ||
+              parseSubscriptionDate(startDate)?.getTime() ||
+              0
+          };
+        })
+        .sort((a, b) => b._sortDate - a._sortDate);
+
+      console.log(`💵 Pagos del miembro ${memberId}:`, payments);
+      console.log(`📚 Historial de suscripciones ${memberId}:`, history);
+
+      setPaymentData(payments);
+      setSubscriptionHistory(history);
+    };
+
+    loadMemberFinancialData();
+
+    window.addEventListener('storage', loadMemberFinancialData);
+    window.addEventListener('gym-storage-update', loadMemberFinancialData);
+
+    return () => {
+      window.removeEventListener('storage', loadMemberFinancialData);
+      window.removeEventListener('gym-storage-update', loadMemberFinancialData);
+    };
+  }, [
+    memberId,
+    subscriptionData.startDate,
+    subscriptionData.endDate
+  ]);
+
+  // ======================================================
+  // ESTADÍSTICAS DEL MIEMBRO
+  // ======================================================
   const calculateStats = () => {
     if (attendanceData.length === 0) {
       return {
@@ -124,27 +593,40 @@ const MemberProfilePage = () => {
     }
 
     const now = new Date();
+
     const thisMonth = attendanceData.filter(item => {
-      const date = new Date(item.date);
-      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+      const date = parseAttendanceDate(item.entryAt || item.createdAt);
+      return (
+        date &&
+        date.getMonth() === now.getMonth() &&
+        date.getFullYear() === now.getFullYear()
+      );
     });
 
     const startOfWeek = new Date(now);
+    startOfWeek.setHours(0, 0, 0, 0);
     startOfWeek.setDate(now.getDate() - now.getDay());
+
     const thisWeek = attendanceData.filter(item => {
-      const date = new Date(item.date);
-      return date >= startOfWeek;
+      const date = parseAttendanceDate(item.entryAt || item.createdAt);
+      return date && date >= startOfWeek && date <= now;
     });
 
     const last = attendanceData[0] || null;
 
-    let totalMinutes = 0;
-    attendanceData.forEach(item => {
-      if (item.durationMinutes) {
-        totalMinutes += item.durationMinutes;
-      }
-    });
-    const avgMinutes = attendanceData.length > 0 ? Math.round(totalMinutes / attendanceData.length) : 0;
+    const completedVisits = attendanceData.filter(
+      item => Number(item.durationMinutes || 0) > 0
+    );
+
+    const totalMinutes = completedVisits.reduce(
+      (total, item) => total + Number(item.durationMinutes || 0),
+      0
+    );
+
+    const avgMinutes = completedVisits.length > 0
+      ? Math.round(totalMinutes / completedVisits.length)
+      : 0;
+
     const avgHours = Math.floor(avgMinutes / 60);
     const avgMins = avgMinutes % 60;
 
@@ -159,14 +641,16 @@ const MemberProfilePage = () => {
 
   const stats = calculateStats();
 
+  const currentAttendance = attendanceData.find(
+    item => item.status === 'inside' && !item.exitAt
+  ) || null;
+
   // Datos del QR
+  // Debe coincidir con el formato generado durante el registro.
   const qrData = JSON.stringify({
-    id: memberId,
-    name: fullName,
-    phone: memberData.phone || '',
-    email: memberData.email || '',
-    subscription: subscriptionData.status || 'inactive',
-    validUntil: subscriptionData.endDate || ''
+    type: 'GYM_ACCESS_V2',
+    memberId: memberId,
+    token: memberData?.access?.qr?.token || ''
   });
 
   const tabs = [
@@ -174,6 +658,7 @@ const MemberProfilePage = () => {
     { id: 'suscripcion', label: 'Suscripción' },
     { id: 'asistencias', label: 'Asistencias' },
     { id: 'pagos', label: 'Pagos' },
+    { id: 'contacto', label: 'Contacto' },
     { id: 'informacion', label: 'Información personal' },
   ];
 
@@ -240,6 +725,8 @@ const MemberProfilePage = () => {
         return renderAsistenciasTab();
       case 'pagos':
         return renderPagosTab();
+      case 'contacto':
+        return renderContactoTab();
       case 'informacion':
         return renderInformacionTab();
       default:
@@ -316,7 +803,7 @@ const MemberProfilePage = () => {
       {/* Código QR */}
       <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6">
         <h3 className="text-white font-bold mb-4">Código de acceso</h3>
-        {memberId !== 'GYM-00000' ? (
+        {memberData?.access?.qr?.enabled && memberData?.access?.qr?.token ? (
           <div className="flex flex-col items-center">
             <div className="bg-white rounded-xl p-3 mb-3 inline-block">
               <QRCodeSVG 
@@ -400,10 +887,18 @@ const MemberProfilePage = () => {
         <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6">
           <h3 className="text-white font-bold mb-4">Estado actual</h3>
           <div className="flex items-center gap-3">
-            <div className="w-3 h-3 bg-gray-500 rounded-full" />
+            <div className={`w-3 h-3 rounded-full ${currentAttendance ? 'bg-[#00ff88]' : 'bg-gray-500'}`} />
             <div>
-              <p className="text-white font-medium">Fuera del gimnasio</p>
-              <p className="text-gray-400 text-sm">Sin registros de entrada recientes.</p>
+              <p className="text-white font-medium">
+                {currentAttendance ? 'Dentro del gimnasio' : 'Fuera del gimnasio'}
+              </p>
+              <p className="text-gray-400 text-sm">
+                {currentAttendance
+                  ? `Entrada registrada a las ${formatAttendanceTime(currentAttendance.entryAt)} mediante ${currentAttendance.method}.`
+                  : attendanceData.length > 0
+                    ? `Última asistencia: ${attendanceData[0].date} a las ${attendanceData[0].entry}.`
+                    : 'Sin registros de entrada recientes.'}
+              </p>
             </div>
           </div>
         </div>
@@ -438,7 +933,7 @@ const MemberProfilePage = () => {
                     <div className="flex items-center gap-4 text-xs text-gray-400">
                       <span>{item.entry}</span>
                       <span>•</span>
-                      <span>Acceso mediante QR</span>
+                      <span>Acceso mediante {item.method}</span>
                     </div>
                   </div>
                 </div>
@@ -632,7 +1127,7 @@ const MemberProfilePage = () => {
               </thead>
               <tbody>
                 {attendanceData.map((item, index) => (
-                  <tr key={index} className="border-b border-[#1a1a1a] hover:bg-[#1a1a1a] transition-colors">
+                  <tr key={item.id || index} className="border-b border-[#1a1a1a] hover:bg-[#1a1a1a] transition-colors">
                     <td className="py-3 px-4 text-white">{item.date}</td>
                     <td className="py-3 px-4 text-gray-300">{item.entry}</td>
                     <td className="py-3 px-4 text-gray-300">{item.exit}</td>
@@ -714,6 +1209,54 @@ const MemberProfilePage = () => {
       </div>
     </div>
   );
+
+  const renderContactoTab = () => (
+
+    <div className="space-y-6">
+
+      <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6">
+
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+
+          <div>
+
+            <h3 className="text-white font-bold">
+              Contacto por WhatsApp
+            </h3>
+
+            <p className="text-gray-500 text-sm mt-1">
+              Prepara mensajes de renovación, vencimiento, promociones, cumpleaños o seguimiento.
+            </p>
+
+          </div>
+
+
+          <WhatsAppButton
+            member={
+              memberData
+            }
+            defaultType={
+              getSuggestedWhatsAppType(
+                memberData
+              )
+            }
+          />
+
+        </div>
+
+      </div>
+
+
+      <WhatsAppHistory
+        memberId={
+          memberId
+        }
+      />
+
+    </div>
+
+  );
+
 
   const renderInformacionTab = () => (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -815,8 +1358,24 @@ const MemberProfilePage = () => {
       alert('Debes escribir un motivo');
       return;
     }
+
+    if (!memberData) {
+      return;
+    }
+
+    const updatedMember = {
+      ...memberData,
+      accessBlocked: true,
+      blockReason: blockReason.trim(),
+      blockedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    saveMember(updatedMember);
+    setMemberData(updatedMember);
     setShowBlockModal(false);
     setBlockReason('');
+
     alert('Acceso bloqueado correctamente');
   };
 
@@ -825,10 +1384,84 @@ const MemberProfilePage = () => {
       alert('Debes seleccionar un motivo');
       return;
     }
+
+    if (!memberData) {
+      return;
+    }
+
+    const updatedMember = {
+      ...memberData,
+      status: 'inactive',
+      accessBlocked: true,
+      deactivationReason: deactivateReason,
+      deactivatedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    saveMember(updatedMember);
+    setMemberData(updatedMember);
     setShowDeactivateModal(false);
     setDeactivateReason('');
+
     alert('Miembro dado de baja correctamente');
+    navigate('/members');
   };
+
+  // ======================================================
+  // CARGANDO MIEMBRO
+  // ======================================================
+  if (loadingMember) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex">
+        <Sidebar activePage="Miembros" />
+
+        <div className="flex-1 lg:ml-0">
+          <Header />
+
+          <main className="p-6">
+            <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-12 text-center">
+              <div className="w-10 h-10 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+              <p className="text-white font-medium">Cargando perfil...</p>
+              <p className="text-gray-500 text-sm mt-1">Buscando {id} en el almacenamiento local.</p>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  // ======================================================
+  // MIEMBRO NO ENCONTRADO
+  // ======================================================
+  if (!memberData) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex">
+        <Sidebar activePage="Miembros" />
+
+        <div className="flex-1 lg:ml-0">
+          <Header />
+
+          <main className="p-6">
+            <div className="bg-[#111111] border border-red-500/20 rounded-xl p-12 text-center">
+              <UserX size={48} className="text-red-400 mx-auto mb-4" />
+              <h2 className="text-white text-xl font-bold">Miembro no encontrado</h2>
+              <p className="text-gray-400 mt-2">
+                No encontramos el miembro {id} en el almacenamiento local.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => navigate('/members')}
+                className="mt-6 px-5 py-2.5 bg-[#00ff88] text-black rounded-xl font-bold"
+              >
+                Volver a miembros
+              </button>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex">
@@ -853,7 +1486,19 @@ const MemberProfilePage = () => {
               <h1 className="text-2xl font-bold text-white">Perfil del miembro</h1>
               <p className="text-gray-400">Información completa y gestión del miembro</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
+
+              <WhatsAppButton
+                member={
+                  memberData
+                }
+                defaultType={
+                  getSuggestedWhatsAppType(
+                    memberData
+                  )
+                }
+              />
+
               <button 
                 onClick={() => navigate(`/members/${memberId}/edit`, { 
                   state: { 

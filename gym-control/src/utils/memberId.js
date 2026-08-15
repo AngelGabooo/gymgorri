@@ -41,34 +41,40 @@ export const getStoredMembers = () => {
 
 
 // ======================================================
-// GENERAR SIGUIENTE ID
+// OBTENER NÚMERO MÁS ALTO UTILIZADO
 // ======================================================
 
-export const getNextMemberId = () => {
+const getHighestMemberNumber = () => {
+
   const members =
     getStoredMembers();
 
-
   let highest = -1;
 
+  members.forEach(
+    (member) => {
 
-  members.forEach((member) => {
-    const match =
-      String(
-        member?.id || ''
-      ).match(
-        /^GYM-(\d{5})$/
-      );
-
-
-    if (match) {
-      highest =
-        Math.max(
-          highest,
-          Number(match[1])
+      const match =
+        String(
+          member?.id || ''
+        ).match(
+          /^GYM-(\d{5})$/
         );
+
+      if (match) {
+
+        highest =
+          Math.max(
+            highest,
+            Number(
+              match[1]
+            )
+          );
+
+      }
+
     }
-  });
+  );
 
 
   const counterValue =
@@ -77,33 +83,124 @@ export const getNextMemberId = () => {
     );
 
 
-  if (counterValue !== null) {
-    const numericCounter =
-      Number(counterValue);
+  if (
+    counterValue !== null
+  ) {
 
+    const numericCounter =
+      Number(
+        counterValue
+      );
 
     if (
       !Number.isNaN(
         numericCounter
       )
     ) {
+
       highest =
         Math.max(
           highest,
           numericCounter
         );
+
     }
+
   }
 
+
+  return highest;
+};
+
+
+// ======================================================
+// GENERAR SIGUIENTE ID
+// ======================================================
+
+export const getNextMemberId = () => {
+
+  const highest =
+    getHighestMemberNumber();
 
   const next =
     highest + 1;
 
-
-  return `GYM-${String(next).padStart(
+  return `GYM-${String(
+    next
+  ).padStart(
     5,
     '0'
   )}`;
+
+};
+
+
+// ======================================================
+// GENERAR VARIOS IDS CONSECUTIVOS
+// ======================================================
+
+export const getNextMemberIds = (
+  quantity = 1
+) => {
+
+  const numericQuantity =
+    Number(
+      quantity
+    );
+
+  const safeQuantity =
+    Number.isFinite(
+      numericQuantity
+    )
+      ? Math.max(
+          0,
+          Math.floor(
+            numericQuantity
+          )
+        )
+      : 0;
+
+
+  if (
+    safeQuantity === 0
+  ) {
+
+    return [];
+
+  }
+
+
+  const highest =
+    getHighestMemberNumber();
+
+  const initial =
+    highest + 1;
+
+
+  return Array.from(
+    {
+      length:
+        safeQuantity
+    },
+    (
+      _,
+      index
+    ) => {
+
+      const numericId =
+        initial +
+        index;
+
+      return `GYM-${String(
+        numericId
+      ).padStart(
+        5,
+        '0'
+      )}`;
+
+    }
+  );
+
 };
 
 
@@ -114,32 +211,72 @@ export const getNextMemberId = () => {
 export const confirmMemberId = (
   memberId
 ) => {
-  const numeric =
-    Number(
-      String(memberId)
-        .replace(
-          'GYM-',
-          ''
-        )
+
+  const match =
+    String(
+      memberId || ''
+    ).match(
+      /^GYM-(\d{5})$/
     );
 
 
-  if (
-    Number.isNaN(numeric)
-  ) {
+  if (!match) {
+
     console.error(
       'ID inválido:',
       memberId
     );
 
     return;
+
   }
 
 
-  localStorage.setItem(
-    MEMBER_COUNTER_KEY,
-    String(numeric)
-  );
+  const numeric =
+    Number(
+      match[1]
+    );
+
+
+  if (
+    Number.isNaN(
+      numeric
+    )
+  ) {
+
+    return;
+
+  }
+
+
+  const current =
+    Number(
+      localStorage.getItem(
+        MEMBER_COUNTER_KEY
+      ) ?? -1
+    );
+
+
+  /*
+   * Nunca retrocedemos el contador.
+   */
+  if (
+    Number.isNaN(
+      current
+    ) ||
+    numeric >
+      current
+  ) {
+
+    localStorage.setItem(
+      MEMBER_COUNTER_KEY,
+      String(
+        numeric
+      )
+    );
+
+  }
+
 };
 
 
@@ -148,21 +285,26 @@ export const confirmMemberId = (
 // ======================================================
 
 export const createUniqueToken = () => {
+
   if (
     window.crypto &&
     window.crypto.randomUUID
   ) {
+
     return window.crypto.randomUUID();
+
   }
 
 
   return (
-    Date.now().toString(36) +
+    Date.now()
+      .toString(36) +
     '-' +
     Math.random()
       .toString(36)
       .substring(2)
   );
+
 };
 
 
@@ -173,12 +315,15 @@ export const createUniqueToken = () => {
 export const hashValue = async (
   value
 ) => {
+
   if (
     !window.crypto?.subtle
   ) {
+
     throw new Error(
       'Este navegador no permite generar hashes seguros.'
     );
+
   }
 
 
@@ -188,7 +333,9 @@ export const hashValue = async (
 
   const encoded =
     encoder.encode(
-      String(value)
+      String(
+        value
+      )
     );
 
 
@@ -212,23 +359,18 @@ export const hashValue = async (
       (byte) =>
         byte
           .toString(16)
-          .padStart(2, '0')
+          .padStart(
+            2,
+            '0'
+          )
     )
     .join('');
+
 };
 
 
 // ======================================================
 // PIN AUTOMÁTICO ÚNICO
-// ======================================================
-//
-// RegisterQRPage espera:
-//
-// {
-//    pin,
-//    pinHash
-// }
-//
 // ======================================================
 
 export const generateUniquePin =
@@ -238,8 +380,6 @@ export const generateUniquePin =
       getStoredMembers();
 
 
-    // Como guardamos pinHash y no el PIN plano,
-    // verificamos la unicidad mediante su hash.
     const existingHashes =
       new Set(
         members
@@ -250,7 +390,9 @@ export const generateUniquePin =
                 ?.pin
                 ?.pinHash
           )
-          .filter(Boolean)
+          .filter(
+            Boolean
+          )
       );
 
 
@@ -261,16 +403,33 @@ export const generateUniquePin =
       attempts <
       100
     ) {
+
       attempts += 1;
 
 
       const random =
-        new Uint32Array(1);
+        new Uint32Array(
+          1
+        );
 
 
-      window.crypto.getRandomValues(
-        random
-      );
+      if (
+        window.crypto?.getRandomValues
+      ) {
+
+        window.crypto.getRandomValues(
+          random
+        );
+
+      } else {
+
+        random[0] =
+          Math.floor(
+            Math.random() *
+            4294967295
+          );
+
+      }
 
 
       const pin =
@@ -284,7 +443,9 @@ export const generateUniquePin =
 
 
       const pinHash =
-        await hashValue(pin);
+        await hashValue(
+          pin
+        );
 
 
       if (
@@ -292,17 +453,21 @@ export const generateUniquePin =
           pinHash
         )
       ) {
+
         return {
           pin,
           pinHash
         };
+
       }
+
     }
 
 
     throw new Error(
       'No se pudo generar un PIN único.'
     );
+
   };
 
 
@@ -312,7 +477,9 @@ export const generateUniquePin =
 
 export const generateUniqueQRToken =
   () => {
+
     return `QR-${createUniqueToken()}`;
+
   };
 
 
@@ -322,7 +489,9 @@ export const generateUniqueQRToken =
 
 export const generateFaceId =
   () => {
+
     return `FACE-${createUniqueToken()}`;
+
   };
 
 
@@ -333,13 +502,16 @@ export const generateFaceId =
 export const saveMember = (
   member
 ) => {
+
   if (
     !member ||
     !member.id
   ) {
+
     throw new Error(
       'El miembro no contiene un ID válido.'
     );
+
   }
 
 
@@ -350,15 +522,24 @@ export const saveMember = (
   const index =
     members.findIndex(
       (item) =>
-        item.id === member.id
+        item.id ===
+        member.id
     );
 
 
-  if (index >= 0) {
+  if (
+    index >= 0
+  ) {
+
     members[index] =
       member;
+
   } else {
-    members.push(member);
+
+    members.push(
+      member
+    );
+
   }
 
 
@@ -375,7 +556,15 @@ export const saveMember = (
   );
 
 
+  window.dispatchEvent(
+    new Event(
+      'gym-storage-update'
+    )
+  );
+
+
   return member;
+
 };
 
 
@@ -386,13 +575,16 @@ export const saveMember = (
 export const getMemberById = (
   memberId
 ) => {
+
   return (
     getStoredMembers().find(
       (member) =>
         member.id ===
         memberId
-    ) || null
+    ) ||
+    null
   );
+
 };
 
 
@@ -404,11 +596,14 @@ export const getMemberByQRToken = (
   memberId,
   token
 ) => {
+
   if (
     !memberId ||
     !token
   ) {
+
     return null;
+
   }
 
 
@@ -420,11 +615,15 @@ export const getMemberByQRToken = (
         member
           ?.access
           ?.qr
-          ?.enabled === true &&
+          ?.enabled ===
+          true &&
         member
           ?.access
           ?.qr
-          ?.token === token
-    ) || null
+          ?.token ===
+          token
+    ) ||
+    null
   );
+
 };

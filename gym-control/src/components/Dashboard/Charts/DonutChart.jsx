@@ -1,49 +1,154 @@
+
 import React from 'react';
 
-const DonutChart = ({ data, total, label }) => {
-  const totalValue = data.reduce((sum, item) => sum + item.value, 0);
-  let currentAngle = 0;
+
+const DonutChart = ({
+  data = [],
+  total = 0,
+  label = 'miembros'
+}) => {
 
   const colors = {
-    'Activas': '#00ff88',
+    Activas: '#00ff88',
     'Por vencer': '#eab308',
-    'Vencidas': '#ef4444',
-    'Bloqueadas': '#6b7280',
+    Vencidas: '#ef4444',
+    Bloqueadas: '#6b7280'
   };
 
+
+  const totalValue =
+    data.reduce(
+      (
+        sum,
+        item
+      ) =>
+        sum +
+        Number(
+          item.value ||
+          0
+        ),
+      0
+    );
+
+
+  const radius =
+    38;
+
+
+  const circumference =
+    2 *
+    Math.PI *
+    radius;
+
+
+  let offset =
+    0;
+
+
   return (
-    <div className="relative w-48 h-48 mx-auto">
-      <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-        {data.map((item, index) => {
-          const percentage = (item.value / totalValue) * 100;
-          const angle = (percentage / 100) * 360;
-          const startAngle = currentAngle;
-          const endAngle = currentAngle + angle;
-          currentAngle += angle;
 
-          const x1 = 50 + 40 * Math.cos((startAngle * Math.PI) / 180);
-          const y1 = 50 + 40 * Math.sin((startAngle * Math.PI) / 180);
-          const x2 = 50 + 40 * Math.cos((endAngle * Math.PI) / 180);
-          const y2 = 50 + 40 * Math.sin((endAngle * Math.PI) / 180);
-          const largeArc = angle > 180 ? 1 : 0;
+    <div className="relative w-52 h-52 mx-auto">
 
-          return (
-            <path
-              key={index}
-              d={`M 50 50 L ${x1} ${y1} A 40 40 0 ${largeArc} 1 ${x2} ${y2} Z`}
-              fill={colors[item.label] || '#6b7280'}
-              className="transition-all duration-300 hover:opacity-80"
-            />
-          );
-        })}
-        <circle cx="50" cy="50" r="25" fill="#111111" />
+      <svg
+        className="w-full h-full -rotate-90"
+        viewBox="0 0 100 100"
+      >
+
+        <circle
+          cx="50"
+          cy="50"
+          r={radius}
+          fill="none"
+          stroke="#1a1a1a"
+          strokeWidth="10"
+        />
+
+
+        {
+          totalValue >
+          0 &&
+          data.map(
+            (
+              item,
+              index
+            ) => {
+
+              const value =
+                Number(
+                  item.value ||
+                  0
+                );
+
+
+              if (
+                value <=
+                0
+              ) {
+                return null;
+              }
+
+
+              const length =
+                (
+                  value /
+                  totalValue
+                ) *
+                circumference;
+
+
+              const currentOffset =
+                offset;
+
+
+              offset +=
+                length;
+
+
+              return (
+
+                <circle
+                  key={`${item.label}-${index}`}
+                  cx="50"
+                  cy="50"
+                  r={radius}
+                  fill="none"
+                  stroke={
+                    colors[item.label] ||
+                    '#6b7280'
+                  }
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                  strokeDasharray={`${Math.max(0, length - 1.5)} ${circumference}`}
+                  strokeDashoffset={-currentOffset}
+                  className="transition-all duration-500"
+                />
+
+              );
+
+            }
+          )
+        }
+
       </svg>
+
+
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-2xl font-bold text-white">{total}</span>
-        <span className="text-xs text-gray-400">{label}</span>
+
+        <span className="text-3xl font-bold text-white">
+          {total}
+        </span>
+
+        <span className="text-[10px] uppercase tracking-[0.16em] text-gray-600 mt-1">
+          {label}
+        </span>
+
       </div>
+
     </div>
+
   );
+
 };
+
 
 export default DonutChart;

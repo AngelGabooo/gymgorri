@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+// src/components/Members/Register/RegisterMemberPage.jsx
+
+import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+
 import {
-  ArrowLeft,
   User,
   Mail,
-  Phone,
   Calendar,
   Upload,
   Camera,
@@ -14,17 +15,50 @@ import {
   QrCode,
   CreditCard,
   UserPlus,
-  X
+  X,
+  GraduationCap,
+  HeartHandshake,
+  Building2,
+  Gift,
+  BadgePercent
 } from 'lucide-react';
+
 import Sidebar from '../../Layout/Sidebar';
 import Header from '../../Layout/Header';
 
+import {
+  getNextMemberId
+} from '../../../utils/memberId';
+
+import {
+  findBlacklistMatches
+} from '../../../services/blacklistService';
+
+import {
+  getCurrentSession
+} from '../../../services/authService';
+
+
 const RegisterMemberPage = () => {
+
   const navigate = useNavigate();
-  
-  // Estado para el contador de miembros (simulado)
-  const [memberCounter, setMemberCounter] = useState(0);
-  
+
+
+  // ======================================================
+  // ID DEL MIEMBRO
+  // ======================================================
+
+  // El ID solamente se consulta.
+  // Todavía NO se confirma hasta terminar todo el registro.
+  const [memberId] = useState(
+    () => getNextMemberId()
+  );
+
+
+  // ======================================================
+  // FORMULARIO
+  // ======================================================
+
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -38,40 +72,118 @@ const RegisterMemberPage = () => {
     profilePhoto: null,
     profilePhotoUrl: null
   });
-  const [errors, setErrors] = useState({});
-  const [showDiscardModal, setShowDiscardModal] = useState(false);
 
-  // Obtener fecha actual
+
+  const [errors, setErrors] = useState({});
+
+  const [
+    showDiscardModal,
+    setShowDiscardModal
+  ] = useState(false);
+
+
+  // ======================================================
+  // TIPO DE REGISTRO / PROMOCIÓN
+  // ======================================================
+
+  const [registrationType, setRegistrationType] = useState('regular');
+
+  const [promotionReference, setPromotionReference] = useState('');
+
+
+  const [blacklistMatches, setBlacklistMatches] = useState([]);
+  const [showBlacklistModal, setShowBlacklistModal] = useState(false);
+  const blacklistBypassRef = useRef(false);
+
+  const currentSession = getCurrentSession();
+  const canAuthorizeBlacklist =
+    currentSession?.role === 'owner' ||
+    currentSession?.role === 'admin';
+
+  const registrationOptions = [
+    {
+      id: 'regular',
+      label: 'Regular',
+      description: 'Registro normal sin promoción.',
+      icon: User
+    },
+    {
+      id: 'student',
+      label: 'Estudiante',
+      description: 'Aplicará automáticamente el beneficio para estudiantes.',
+      icon: GraduationCap
+    },
+    {
+      id: 'couple',
+      label: 'Pareja',
+      description: 'Registra dos personas al mismo tiempo y las vincula.',
+      icon: HeartHandshake
+    },
+    {
+      id: 'agreement',
+      label: 'Convenio',
+      description: 'Beneficio para empresa, escuela o institución.',
+      icon: Building2
+    },
+    {
+      id: 'courtesy',
+      label: 'Cortesía',
+      description: 'Suscripción autorizada sin cobro.',
+      icon: Gift
+    }
+  ];
+
+
+  // ======================================================
+  // FECHA ACTUAL PARA MOSTRAR
+  // ======================================================
+
   const getCurrentDate = () => {
+
     const now = new Date();
-    const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    const day = now.getDate().toString().padStart(2, '0');
-    const month = months[now.getMonth()];
-    const year = now.getFullYear();
+
+    const months = [
+      'Ene',
+      'Feb',
+      'Mar',
+      'Abr',
+      'May',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dic'
+    ];
+
+    const day =
+      now
+        .getDate()
+        .toString()
+        .padStart(2, '0');
+
+    const month =
+      months[
+        now.getMonth()
+      ];
+
+    const year =
+      now.getFullYear();
+
+
     return `${day} ${month} ${year}`;
   };
 
-  // Generar ID secuencial
-  const generateMemberId = (counter) => {
-    const paddedNumber = counter.toString().padStart(5, '0');
-    return `GYM-${paddedNumber}`;
-  };
 
-  // Cargar el contador desde localStorage (para persistencia)
-  useEffect(() => {
-    const savedCounter = localStorage.getItem('gymMemberCounter');
-    if (savedCounter) {
-      setMemberCounter(parseInt(savedCounter));
-    } else {
-      // Si no hay contador, iniciar en 0
-      localStorage.setItem('gymMemberCounter', '0');
-    }
-  }, []);
+  const registrationDate =
+    getCurrentDate();
 
-  const memberId = generateMemberId(memberCounter + 1);
-  const registrationDate = getCurrentDate();
 
-  // Lista de imágenes disponibles en public/img/
+  // ======================================================
+  // FOTOS DE PRUEBA
+  // ======================================================
+
   const profileImages = [
     '/img/profile1.png',
     '/img/profile2.png',
@@ -80,591 +192,2050 @@ const RegisterMemberPage = () => {
     '/img/profile5.png',
   ];
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
 
-  // Función para seleccionar imagen aleatoria
-  const handleRandomPhoto = () => {
-    const randomIndex = Math.floor(Math.random() * profileImages.length);
-    const selectedImage = profileImages[randomIndex];
-    setFormData(prev => ({ 
-      ...prev, 
-      profilePhotoUrl: selectedImage,
-      profilePhoto: null
-    }));
-  };
+  // ======================================================
+  // CAMBIOS DE INPUTS
+  // ======================================================
 
-  // Función para subir imagen manualmente
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setFormData(prev => ({ 
-          ...prev, 
-          profilePhotoUrl: event.target.result,
-          profilePhoto: file
-        }));
-      };
-      reader.readAsDataURL(file);
+  const handleInputChange = (
+    e
+  ) => {
+
+    const {
+      name,
+      value
+    } = e.target;
+
+
+    setFormData(
+      prev => ({
+        ...prev,
+        [name]: value
+      })
+    );
+
+
+    // Limpiar el error del campo
+    // cuando el usuario comience a corregirlo.
+    if (
+      errors[
+        name
+      ]
+    ) {
+
+      setErrors(
+        prev => ({
+          ...prev,
+          [name]: ''
+        })
+      );
+
     }
+
   };
 
-  // Función para eliminar foto
-  const handleRemovePhoto = () => {
-    setFormData(prev => ({ 
-      ...prev, 
-      profilePhotoUrl: null,
-      profilePhoto: null
-    }));
+
+  // ======================================================
+  // FOTO ALEATORIA
+  // ======================================================
+
+  const handleRandomPhoto = () => {
+
+    const randomIndex =
+      Math.floor(
+        Math.random() *
+        profileImages.length
+      );
+
+
+    const selectedImage =
+      profileImages[
+        randomIndex
+      ];
+
+
+    setFormData(
+      prev => ({
+        ...prev,
+
+        profilePhotoUrl:
+          selectedImage,
+
+        profilePhoto:
+          null
+      })
+    );
+
   };
 
-// En handleSubmit, asegurar que la foto se pasa correctamente
-const handleSubmit = (e) => {
-  e.preventDefault();
-  const newErrors = {};
-  if (!formData.firstName) newErrors.firstName = 'El nombre es obligatorio';
-  if (!formData.lastName) newErrors.lastName = 'Los apellidos son obligatorios';
-  if (!formData.phone) newErrors.phone = 'Ingresa un número de teléfono válido';
-  if (formData.email && !formData.email.includes('@')) {
-    newErrors.email = 'Ingresa un correo electrónico válido';
-  }
 
-  if (Object.keys(newErrors).length > 0) {
-    setErrors(newErrors);
-    return;
-  }
+  // ======================================================
+  // SUBIR FOTO
+  // ======================================================
 
-  // Incrementar el contador
-  const newCounter = memberCounter + 1;
-  setMemberCounter(newCounter);
-  localStorage.setItem('gymMemberCounter', newCounter.toString());
+  const handleFileUpload = (
+    e
+  ) => {
 
-  // Redirigir al Paso 2 con los datos del miembro - INCLUYENDO LA FOTO
-  navigate('/members/register/subscription', { 
-    state: { 
-      memberData: {
+    const file =
+      e.target.files?.[0];
+
+
+    if (
+      !file
+    ) {
+
+      return;
+
+    }
+
+
+    // Máximo 5 MB
+    const maxSize =
+      5 *
+      1024 *
+      1024;
+
+
+    if (
+      file.size >
+      maxSize
+    ) {
+
+      alert(
+        'La imagen no puede superar los 5 MB.'
+      );
+
+      e.target.value =
+        '';
+
+      return;
+
+    }
+
+
+    const reader =
+      new FileReader();
+
+
+    reader.onload = (
+      event
+    ) => {
+
+      setFormData(
+        prev => ({
+          ...prev,
+
+          profilePhotoUrl:
+            event.target.result,
+
+          profilePhoto:
+            file
+        })
+      );
+
+    };
+
+
+    reader.readAsDataURL(
+      file
+    );
+
+  };
+
+
+  // ======================================================
+  // ELIMINAR FOTO
+  // ======================================================
+
+  const handleRemovePhoto =
+    () => {
+
+      setFormData(
+        prev => ({
+          ...prev,
+
+          profilePhotoUrl:
+            null,
+
+          profilePhoto:
+            null
+        })
+      );
+
+    };
+
+
+  // ======================================================
+  // VALIDAR TELÉFONO
+  // ======================================================
+
+  const isValidPhone = (
+    value
+  ) => {
+
+    const digits =
+      String(
+        value || ''
+      ).replace(
+        /\D/g,
+        ''
+      );
+
+
+    return (
+      digits.length >= 10
+    );
+
+  };
+
+
+  // ======================================================
+  // CONTINUAR AL PASO 2
+  // ======================================================
+
+  const handleSubmit = (
+    e
+  ) => {
+
+    e?.preventDefault();
+
+
+    const newErrors = {};
+
+
+    // La promoción de pareja utiliza un flujo especial
+    // porque deben registrarse dos personas en la misma operación.
+    if (registrationType === 'couple') {
+      navigate('/members/register/couple');
+      return;
+    }
+
+
+    // ======================================================
+    // VALIDACIONES
+    // ======================================================
+
+    if (
+      !formData
+        .firstName
+        .trim()
+    ) {
+
+      newErrors.firstName =
+        'El nombre es obligatorio';
+
+    }
+
+
+    if (
+      !formData
+        .lastName
+        .trim()
+    ) {
+
+      newErrors.lastName =
+        'Los apellidos son obligatorios';
+
+    }
+
+
+    if (
+      !formData
+        .phone
+        .trim() ||
+      !isValidPhone(
+        formData.phone
+      )
+    ) {
+
+      newErrors.phone =
+        'Ingresa un número de teléfono válido';
+
+    }
+
+
+    if (
+      formData.email &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+        formData.email
+      )
+    ) {
+
+      newErrors.email =
+        'Ingresa un correo electrónico válido';
+
+    }
+
+
+    if (
+      (registrationType === 'agreement' || registrationType === 'courtesy') &&
+      !promotionReference.trim()
+    ) {
+
+      newErrors.promotionReference =
+        registrationType === 'courtesy'
+          ? 'Escribe el motivo o autorización de la cortesía'
+          : 'Escribe el nombre de la empresa, escuela o institución';
+
+    }
+
+
+    if (
+      Object.keys(
+        newErrors
+      ).length >
+      0
+    ) {
+
+      setErrors(
+        newErrors
+      );
+
+      return;
+
+    }
+
+
+    const matches =
+      findBlacklistMatches({
         firstName: formData.firstName,
         lastName: formData.lastName,
         phone: formData.phone,
-        email: formData.email,
-        id: generateMemberId(newCounter),
-        registrationDate: registrationDate,
-        profilePhoto: formData.profilePhotoUrl // <-- PASAR LA FOTO AQUÍ
-      }
-    }
-  });
-};
+        email: formData.email
+      });
 
-  const handleCancel = () => {
-    if (Object.values(formData).some(value => value !== '' && value !== null)) {
-      setShowDiscardModal(true);
-    } else {
-      navigate('/members');
+
+    if (
+      matches.length > 0 &&
+      !blacklistBypassRef.current
+    ) {
+
+      setBlacklistMatches(matches);
+      setShowBlacklistModal(true);
+      return;
+
     }
+
+
+    blacklistBypassRef.current = false;
+    setErrors({});
+
+
+    // ======================================================
+    // PREPARAR DATOS COMPLETOS
+    // ======================================================
+    //
+    // Quitamos el objeto File porque localStorage
+    // no puede guardar correctamente un File.
+    //
+    // Solamente conservamos profilePhotoUrl
+    // convertido en profilePhoto.
+    //
+    // ======================================================
+
+    const {
+      profilePhoto,
+      profilePhotoUrl,
+      ...personalData
+    } = formData;
+
+
+    const now =
+      new Date()
+        .toISOString();
+
+
+    const memberData = {
+
+      ...personalData,
+
+
+      // ====================================================
+      // IDENTIFICACIÓN
+      // ====================================================
+
+      id:
+        memberId,
+
+
+      // ====================================================
+      // FOTO
+      // ====================================================
+
+      profilePhoto:
+        profilePhotoUrl ||
+        null,
+
+
+      // ====================================================
+      // FECHAS
+      // ====================================================
+
+      registrationDate:
+        now,
+
+      createdAt:
+        now,
+
+      updatedAt:
+        now,
+
+
+      // ====================================================
+      // TIPO DE REGISTRO / PROMOCIÓN
+      // ====================================================
+
+      registrationCategory:
+        registrationType,
+
+      promotionProfile:
+        registrationType === 'regular'
+          ? null
+          : {
+              id: registrationType,
+              label:
+                registrationOptions.find(option => option.id === registrationType)?.label ||
+                registrationType,
+              reference:
+                promotionReference.trim()
+            },
+
+
+      // ====================================================
+      // ESTADO INICIAL
+      // ====================================================
+
+      status:
+        'pending_subscription',
+
+      accessBlocked:
+        false,
+
+    };
+
+
+    console.log(
+      '👤 Datos completos Paso 1:',
+      memberData
+    );
+
+
+    // ======================================================
+    // PASAR AL PASO 2
+    // ======================================================
+
+    navigate(
+      '/members/register/subscription',
+      {
+
+        state: {
+
+          memberData,
+
+          promotionContext:
+            registrationType === 'regular'
+              ? null
+              : {
+                  id: registrationType,
+                  label:
+                    registrationOptions.find(option => option.id === registrationType)?.label ||
+                    registrationType,
+                  reference:
+                    promotionReference.trim(),
+                  locked: true
+                }
+
+        }
+
+      }
+    );
+
   };
 
+
+  // ======================================================
+  // CANCELAR
+  // ======================================================
+
+  const handleCancel =
+    () => {
+
+      const hasData =
+        Object.values(
+          formData
+        ).some(
+          value =>
+            value !== '' &&
+            value !== null
+        );
+
+
+      if (
+        hasData
+      ) {
+
+        setShowDiscardModal(
+          true
+        );
+
+      } else {
+
+        navigate(
+          '/members'
+        );
+
+      }
+
+    };
+
+
+  // ======================================================
+  // PASOS
+  // ======================================================
+
   const steps = [
-    { number: 1, label: 'Datos personales', icon: User, completed: false, current: true },
-    { number: 2, label: 'Suscripción', icon: CreditCard, completed: false },
-    { number: 3, label: 'Código QR', icon: QrCode, completed: false },
+
+    {
+      number: 1,
+      label:
+        'Datos personales',
+      icon:
+        User,
+      completed:
+        false,
+      current:
+        true
+    },
+
+    {
+      number: 2,
+      label:
+        'Suscripción',
+      icon:
+        CreditCard,
+      completed:
+        false
+    },
+
+    {
+      number: 3,
+      label:
+        'Código QR',
+      icon:
+        QrCode,
+      completed:
+        false
+    },
+
   ];
 
+
+  // ======================================================
+  // RENDER
+  // ======================================================
+
   return (
+
     <div className="min-h-screen bg-[#0a0a0a] flex">
-      <Sidebar activePage="Miembros" />
-      
+
+      <Sidebar
+        activePage="Miembros"
+      />
+
+
       <div className="flex-1 lg:ml-0">
+
         <Header />
-        
+
+
         <main className="p-6">
-          {/* Breadcrumb y header */}
+
+
+          {/* ================================================= */}
+          {/* BREADCRUMB / HEADER */}
+          {/* ================================================= */}
+
           <div className="mb-6">
+
             <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
-              <button onClick={() => navigate('/members')} className="hover:text-white transition-colors">
+
+              <button
+                type="button"
+                onClick={() =>
+                  navigate(
+                    '/members'
+                  )
+                }
+                className="hover:text-white transition-colors"
+              >
                 Miembros
               </button>
-              <span>/</span>
-              <span className="text-white">Registrar miembro</span>
+
+
+              <span>
+                /
+              </span>
+
+
+              <span className="text-white">
+                Registrar miembro
+              </span>
+
             </div>
+
+
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+
               <div>
-                <h1 className="text-2xl font-bold text-white">Registrar nuevo miembro</h1>
-                <p className="text-gray-400">Agrega una nueva persona al gimnasio y prepara su acceso.</p>
+
+                <h1 className="text-2xl font-bold text-white">
+                  Registrar nuevo miembro
+                </h1>
+
+
+                <p className="text-gray-400">
+                  Agrega una nueva persona al gimnasio y prepara su acceso.
+                </p>
+
               </div>
+
+
               <div className="flex gap-2">
-                <button 
-                  onClick={handleCancel}
+
+                <button
+                  type="button"
+                  onClick={
+                    handleCancel
+                  }
                   className="px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-gray-400 hover:border-[#00ff88] hover:text-white transition-colors"
                 >
                   Cancelar
                 </button>
-                <button 
-                  onClick={handleSubmit}
+
+
+                <button
+                  type="button"
+                  onClick={
+                    handleSubmit
+                  }
                   className="px-4 py-2 bg-[#00ff88] text-black rounded-xl font-bold hover:bg-[#00cc6a] transition-all duration-300 hover:shadow-[0_0_30px_rgba(0,255,136,0.3)] flex items-center gap-2"
                 >
-                  <Check size={18} />
+
+                  <Check
+                    size={18}
+                  />
+
                   Guardar y continuar
+
                 </button>
+
               </div>
+
             </div>
+
           </div>
 
-          {/* Stepper */}
+
+          {/* ================================================= */}
+          {/* STEPPER */}
+          {/* ================================================= */}
+
           <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6 mb-6">
+
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+
               <div className="flex items-center gap-4">
-                {steps.map((step, index) => {
-                  const Icon = step.icon;
-                  return (
-                    <React.Fragment key={step.number}>
-                      <div className="flex items-center gap-2">
-                        <div className={`
-                          w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold
-                          ${step.current ? 'bg-[#00ff88] text-black ring-2 ring-[#00ff88] ring-offset-2 ring-offset-[#111111]' : 
-                            step.completed ? 'bg-[#00ff88] text-black' : 
-                            'bg-[#1a1a1a] text-gray-500'}
-                        `}>
-                          {step.completed ? <Check size={16} /> : step.number}
-                        </div>
-                        <span className={`
-                          text-sm font-medium
-                          ${step.current ? 'text-white' : 
-                            step.completed ? 'text-[#00ff88]' : 
-                            'text-gray-500'}
-                        `}>
-                          {step.label}
-                        </span>
-                      </div>
-                      {index < steps.length - 1 && (
-                        <div className="hidden sm:block w-12 h-px bg-[#2a2a2a]" />
-                      )}
-                    </React.Fragment>
-                  );
-                })}
+
+                {
+                  steps.map(
+                    (
+                      step,
+                      index
+                    ) => {
+
+                      const Icon =
+                        step.icon;
+
+
+                      return (
+
+                        <React.Fragment
+                          key={
+                            step.number
+                          }
+                        >
+
+                          <div className="flex items-center gap-2">
+
+                            <div
+                              className={`
+                                w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold
+
+                                ${
+                                  step.current
+                                    ? 'bg-[#00ff88] text-black ring-2 ring-[#00ff88] ring-offset-2 ring-offset-[#111111]'
+                                    : step.completed
+                                      ? 'bg-[#00ff88] text-black'
+                                      : 'bg-[#1a1a1a] text-gray-500'
+                                }
+                              `}
+                            >
+
+                              {
+                                step.completed
+                                  ? (
+                                    <Check
+                                      size={
+                                        16
+                                      }
+                                    />
+                                  )
+                                  : step.number
+                              }
+
+                            </div>
+
+
+                            <span
+                              className={`
+                                text-sm font-medium
+
+                                ${
+                                  step.current
+                                    ? 'text-white'
+                                    : step.completed
+                                      ? 'text-[#00ff88]'
+                                      : 'text-gray-500'
+                                }
+                              `}
+                            >
+                              {
+                                step.label
+                              }
+                            </span>
+
+                          </div>
+
+
+                          {
+                            index <
+                              steps.length -
+                                1 &&
+                            (
+
+                              <div className="hidden sm:block w-12 h-px bg-[#2a2a2a]" />
+
+                            )
+                          }
+
+                        </React.Fragment>
+
+                      );
+
+                    }
+                  )
+                }
+
               </div>
+
+
               <p className="text-gray-500 text-xs">
                 Paso 1 de 3 - Datos personales
               </p>
+
             </div>
+
+
             <p className="text-gray-500 text-sm mt-3">
-              Primero registra los datos del miembro. Después podrás activar su suscripción y generar su código QR.
+              Primero registra los datos del miembro. Después podrás activar su suscripción y generar sus métodos de acceso.
             </p>
+
           </div>
 
-          {/* Formulario y resumen en grid */}
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            {/* Formulario principal */}
+
+          {/* ================================================= */}
+          {/* TIPO DE REGISTRO */}
+          {/* ================================================= */}
+
+          <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6 mb-6">
+
+            <div className="flex items-start gap-3 mb-5">
+              <div className="w-10 h-10 rounded-xl bg-[#00ff88]/10 border border-[#00ff88]/20 flex items-center justify-center shrink-0">
+                <BadgePercent size={19} className="text-[#00ff88]" />
+              </div>
+
+              <div>
+                <h3 className="text-white font-bold">
+                  Tipo de registro
+                </h3>
+                <p className="text-gray-400 text-sm mt-1">
+                  Selecciona si el miembro entra como cliente regular o mediante una promoción.
+                </p>
+              </div>
+            </div>
+
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+              {registrationOptions.map(option => {
+                const Icon = option.icon;
+                const selected = registrationType === option.id;
+
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => {
+                      setRegistrationType(option.id);
+                      setPromotionReference('');
+                      setErrors(previous => ({
+                        ...previous,
+                        promotionReference: ''
+                      }));
+                    }}
+                    className={`p-4 rounded-xl border-2 text-left transition-all ${
+                      selected
+                        ? 'border-[#00ff88] bg-[#00ff88]/10'
+                        : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#00ff88]/40'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${selected ? 'bg-[#00ff88] text-black' : 'bg-[#111111] text-gray-500'}`}>
+                        <Icon size={18} />
+                      </div>
+
+                      {selected && <Check size={17} className="text-[#00ff88]" />}
+                    </div>
+
+                    <p className="text-white font-bold text-sm">
+                      {option.label}
+                    </p>
+                    <p className="text-gray-500 text-xs mt-1 leading-relaxed">
+                      {option.description}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+
+
+            {registrationType === 'couple' && (
+              <div className="mt-4 p-4 rounded-xl bg-[#00ff88]/5 border border-[#00ff88]/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <p className="text-white font-semibold">
+                    La promoción de pareja registra a dos personas juntas
+                  </p>
+                  <p className="text-gray-400 text-xs mt-1">
+                    Cada persona tendrá su propio ID, QR, PIN, biometría, asistencias e historial.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => navigate('/members/register/couple')}
+                  className="px-4 py-2 rounded-xl bg-[#00ff88] text-black font-bold whitespace-nowrap flex items-center gap-2"
+                >
+                  Registrar las 2 personas
+                  <ChevronRight size={17} />
+                </button>
+              </div>
+            )}
+
+
+            {(registrationType === 'agreement' || registrationType === 'courtesy') && (
+              <div className="mt-4">
+                <label className="text-white text-sm font-medium mb-1 block">
+                  {registrationType === 'courtesy'
+                    ? 'Motivo / autorización de cortesía'
+                    : 'Empresa, escuela o institución del convenio'}
+                  <span className="text-red-400"> *</span>
+                </label>
+
+                <input
+                  type="text"
+                  value={promotionReference}
+                  onChange={event => {
+                    setPromotionReference(event.target.value);
+                    setErrors(previous => ({
+                      ...previous,
+                      promotionReference: ''
+                    }));
+                  }}
+                  placeholder={
+                    registrationType === 'courtesy'
+                      ? 'Ej. Autorizada por administración'
+                      : 'Ej. UPChiapas / Empresa ABC'
+                  }
+                  className={`w-full bg-[#1a1a1a] border ${errors.promotionReference ? 'border-red-500' : 'border-[#2a2a2a]'} rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none`}
+                />
+
+                {errors.promotionReference && (
+                  <p className="text-red-400 text-xs mt-1">
+                    {errors.promotionReference}
+                  </p>
+                )}
+              </div>
+            )}
+
+          </div>
+
+
+          {/* ================================================= */}
+          {/* CONTENIDO */}
+          {/* ================================================= */}
+
+          <div className={`${registrationType === 'couple' ? 'hidden' : 'grid'} grid-cols-1 xl:grid-cols-3 gap-6`}> 
+
+
+            {/* ================================================= */}
+            {/* FORMULARIO */}
+            {/* ================================================= */}
+
             <div className="xl:col-span-2 space-y-6">
-              <form onSubmit={handleSubmit}>
-                {/* Foto del miembro */}
+
+              <form
+                onSubmit={
+                  handleSubmit
+                }
+              >
+
+
+                {/* ================================================= */}
+                {/* FOTO */}
+                {/* ================================================= */}
+
                 <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6">
-                  <h3 className="text-white font-bold mb-1">Foto del miembro</h3>
+
+                  <h3 className="text-white font-bold mb-1">
+                    Foto del miembro
+                  </h3>
+
+
                   <p className="text-gray-400 text-sm mb-4">
                     Esta fotografía ayudará a identificar a la persona durante el control de acceso.
                   </p>
+
+
                   <div className="flex flex-col sm:flex-row items-center gap-6">
+
                     <div className="w-32 h-32 rounded-full bg-[#1a1a1a] border-2 border-[#2a2a2a] flex items-center justify-center overflow-hidden">
-                      {formData.profilePhotoUrl ? (
-                        <img 
-                          src={formData.profilePhotoUrl} 
-                          alt="Foto de perfil" 
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <User size={48} className="text-gray-500" />
-                      )}
+
+                      {
+                        formData.profilePhotoUrl
+                          ? (
+
+                            <img
+                              src={
+                                formData.profilePhotoUrl
+                              }
+                              alt="Foto de perfil"
+                              className="w-full h-full object-cover"
+                            />
+
+                          )
+                          : (
+
+                            <User
+                              size={48}
+                              className="text-gray-500"
+                            />
+
+                          )
+                      }
+
                     </div>
+
+
                     <div className="flex-1">
+
                       <div className="flex flex-wrap gap-2">
+
                         <input
                           type="file"
                           id="file-upload"
-                          accept="image/*"
-                          onChange={handleFileUpload}
+                          accept="image/png,image/jpeg,image/jpg,image/webp"
+                          onChange={
+                            handleFileUpload
+                          }
                           className="hidden"
                         />
-                        <label 
+
+
+                        <label
                           htmlFor="file-upload"
                           className="px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white hover:border-[#00ff88] transition-colors flex items-center gap-2 cursor-pointer"
                         >
-                          <Upload size={16} />
+
+                          <Upload
+                            size={16}
+                          />
+
                           Subir fotografía
+
                         </label>
-                        <button 
+
+
+                        <button
                           type="button"
-                          onClick={handleRandomPhoto}
+                          onClick={
+                            handleRandomPhoto
+                          }
                           className="px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white hover:border-[#00ff88] transition-colors flex items-center gap-2"
                         >
-                          <Camera size={16} />
+
+                          <Camera
+                            size={16}
+                          />
+
                           Usar foto aleatoria
+
                         </button>
-                        {formData.profilePhotoUrl && (
-                          <button 
-                            type="button"
-                            onClick={handleRemovePhoto}
-                            className="px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 hover:bg-red-500/20 transition-colors flex items-center gap-2"
-                          >
-                            <X size={16} />
-                            Eliminar
-                          </button>
-                        )}
+
+
+                        {
+                          formData.profilePhotoUrl &&
+                          (
+
+                            <button
+                              type="button"
+                              onClick={
+                                handleRemovePhoto
+                              }
+                              className="px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 hover:bg-red-500/20 transition-colors flex items-center gap-2"
+                            >
+
+                              <X
+                                size={16}
+                              />
+
+                              Eliminar
+
+                            </button>
+
+                          )
+                        }
+
                       </div>
-                      <p className="text-gray-500 text-xs mt-2">JPG o PNG · Máximo 5 MB</p>
+
+
+                      <p className="text-gray-500 text-xs mt-2">
+                        JPG, PNG o WEBP · Máximo 5 MB
+                      </p>
+
                     </div>
+
                   </div>
+
                 </div>
 
-                {/* Información personal */}
-                <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6">
-                  <h3 className="text-white font-bold mb-4">Información personal</h3>
+
+                {/* ================================================= */}
+                {/* INFORMACIÓN PERSONAL */}
+                {/* ================================================= */}
+
+                <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6 mt-6">
+
+                  <h3 className="text-white font-bold mb-4">
+                    Información personal
+                  </h3>
+
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
                     <div>
+
                       <label className="text-white text-sm font-medium mb-1 block">
-                        Nombre <span className="text-red-400">*</span>
+
+                        Nombre
+
+                        <span className="text-red-400">
+                          *
+                        </span>
+
                       </label>
+
+
                       <input
                         type="text"
                         name="firstName"
                         placeholder="Ej. Carlos"
-                        value={formData.firstName}
-                        onChange={handleInputChange}
-                        className={`w-full bg-[#1a1a1a] border ${errors.firstName ? 'border-red-500' : 'border-[#2a2a2a]'} rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none transition-colors`}
+                        value={
+                          formData.firstName
+                        }
+                        onChange={
+                          handleInputChange
+                        }
+                        className={`
+                          w-full bg-[#1a1a1a] border rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none transition-colors
+
+                          ${
+                            errors.firstName
+                              ? 'border-red-500'
+                              : 'border-[#2a2a2a]'
+                          }
+                        `}
                       />
-                      {errors.firstName && (
-                        <p className="text-red-400 text-xs mt-1">{errors.firstName}</p>
-                      )}
+
+
+                      {
+                        errors.firstName &&
+                        (
+
+                          <p className="text-red-400 text-xs mt-1">
+                            {
+                              errors.firstName
+                            }
+                          </p>
+
+                        )
+                      }
+
                     </div>
+
+
                     <div>
+
                       <label className="text-white text-sm font-medium mb-1 block">
-                        Apellidos <span className="text-red-400">*</span>
+
+                        Apellidos
+
+                        <span className="text-red-400">
+                          *
+                        </span>
+
                       </label>
+
+
                       <input
                         type="text"
                         name="lastName"
                         placeholder="Ej. Hernández López"
-                        value={formData.lastName}
-                        onChange={handleInputChange}
-                        className={`w-full bg-[#1a1a1a] border ${errors.lastName ? 'border-red-500' : 'border-[#2a2a2a]'} rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none transition-colors`}
+                        value={
+                          formData.lastName
+                        }
+                        onChange={
+                          handleInputChange
+                        }
+                        className={`
+                          w-full bg-[#1a1a1a] border rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none transition-colors
+
+                          ${
+                            errors.lastName
+                              ? 'border-red-500'
+                              : 'border-[#2a2a2a]'
+                          }
+                        `}
                       />
-                      {errors.lastName && (
-                        <p className="text-red-400 text-xs mt-1">{errors.lastName}</p>
-                      )}
+
+
+                      {
+                        errors.lastName &&
+                        (
+
+                          <p className="text-red-400 text-xs mt-1">
+                            {
+                              errors.lastName
+                            }
+                          </p>
+
+                        )
+                      }
+
                     </div>
+
                   </div>
+
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+
                     <div>
+
                       <label className="text-white text-sm font-medium mb-1 block">
                         Fecha de nacimiento
                       </label>
+
+
                       <div className="relative">
-                        <Calendar size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                        <input
-                          type="text"
-                          name="birthDate"
-                          placeholder="DD / MM / AAAA"
-                          value={formData.birthDate}
-                          onChange={handleInputChange}
-                          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl pl-10 pr-4 py-2.5 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none transition-colors"
+
+                        <Calendar
+                          size={18}
+                          className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none"
                         />
+
+
+                        <input
+                          type="date"
+                          name="birthDate"
+                          value={
+                            formData.birthDate
+                          }
+                          onChange={
+                            handleInputChange
+                          }
+                          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl pl-10 pr-4 py-2.5 text-white focus:border-[#00ff88] focus:outline-none transition-colors"
+                        />
+
                       </div>
+
                     </div>
+
+
                     <div>
+
                       <label className="text-white text-sm font-medium mb-1 block">
                         Género
                       </label>
+
+
                       <select
                         name="gender"
-                        value={formData.gender}
-                        onChange={handleInputChange}
+                        value={
+                          formData.gender
+                        }
+                        onChange={
+                          handleInputChange
+                        }
                         className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-4 py-2.5 text-white focus:border-[#00ff88] focus:outline-none transition-colors"
                       >
-                        <option value="">Seleccionar</option>
-                        <option value="male">Masculino</option>
-                        <option value="female">Femenino</option>
-                        <option value="other">Otro</option>
-                        <option value="prefer-not">Prefiero no especificar</option>
+
+                        <option value="">
+                          Seleccionar
+                        </option>
+
+                        <option value="male">
+                          Masculino
+                        </option>
+
+                        <option value="female">
+                          Femenino
+                        </option>
+
+                        <option value="other">
+                          Otro
+                        </option>
+
+                        <option value="prefer-not">
+                          Prefiero no especificar
+                        </option>
+
                       </select>
+
                     </div>
+
                   </div>
+
                 </div>
 
-                {/* Información de contacto */}
-                <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6">
-                  <h3 className="text-white font-bold mb-4">Información de contacto</h3>
+
+                {/* ================================================= */}
+                {/* CONTACTO */}
+                {/* ================================================= */}
+
+                <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6 mt-6">
+
+                  <h3 className="text-white font-bold mb-4">
+                    Información de contacto
+                  </h3>
+
+
                   <div className="grid grid-cols-1 gap-4">
+
                     <div>
+
                       <label className="text-white text-sm font-medium mb-1 block">
-                        Teléfono <span className="text-red-400">*</span>
+
+                        Teléfono
+
+                        <span className="text-red-400">
+                          *
+                        </span>
+
                       </label>
+
+
                       <div className="flex gap-2">
-                        <select className="w-20 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-3 py-2.5 text-white focus:border-[#00ff88] focus:outline-none transition-colors">
-                          <option>+52</option>
-                          <option>+1</option>
-                          <option>+34</option>
-                        </select>
+
+                        <div className="w-20 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-3 py-2.5 text-white text-center">
+                          +52
+                        </div>
+
+
                         <input
-                          type="text"
+                          type="tel"
                           name="phone"
                           placeholder="961 123 4567"
-                          value={formData.phone}
-                          onChange={handleInputChange}
-                          className={`flex-1 bg-[#1a1a1a] border ${errors.phone ? 'border-red-500' : 'border-[#2a2a2a]'} rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none transition-colors`}
+                          value={
+                            formData.phone
+                          }
+                          onChange={
+                            handleInputChange
+                          }
+                          className={`
+                            flex-1 bg-[#1a1a1a] border rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none transition-colors
+
+                            ${
+                              errors.phone
+                                ? 'border-red-500'
+                                : 'border-[#2a2a2a]'
+                            }
+                          `}
                         />
+
                       </div>
-                      {errors.phone && (
-                        <p className="text-red-400 text-xs mt-1">{errors.phone}</p>
-                      )}
+
+
+                      {
+                        errors.phone &&
+                        (
+
+                          <p className="text-red-400 text-xs mt-1">
+                            {
+                              errors.phone
+                            }
+                          </p>
+
+                        )
+                      }
+
                     </div>
+
+
                     <div>
+
                       <label className="text-white text-sm font-medium mb-1 block">
                         Correo electrónico
                       </label>
+
+
                       <div className="relative">
-                        <Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+
+                        <Mail
+                          size={18}
+                          className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none"
+                        />
+
+
                         <input
                           type="email"
                           name="email"
                           placeholder="correo@ejemplo.com"
-                          value={formData.email}
-                          onChange={handleInputChange}
-                          className={`w-full bg-[#1a1a1a] border ${errors.email ? 'border-red-500' : 'border-[#2a2a2a]'} rounded-xl pl-10 pr-4 py-2.5 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none transition-colors`}
+                          value={
+                            formData.email
+                          }
+                          onChange={
+                            handleInputChange
+                          }
+                          className={`
+                            w-full bg-[#1a1a1a] border rounded-xl pl-10 pr-4 py-2.5 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none transition-colors
+
+                            ${
+                              errors.email
+                                ? 'border-red-500'
+                                : 'border-[#2a2a2a]'
+                            }
+                          `}
                         />
+
                       </div>
-                      {errors.email && (
-                        <p className="text-red-400 text-xs mt-1">{errors.email}</p>
-                      )}
+
+
+                      {
+                        errors.email &&
+                        (
+
+                          <p className="text-red-400 text-xs mt-1">
+                            {
+                              errors.email
+                            }
+                          </p>
+
+                        )
+                      }
+
+
                       <p className="text-gray-500 text-xs mt-1">
                         Utilizado para notificaciones y recuperación de información.
                       </p>
+
                     </div>
+
                   </div>
+
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+
                     <div>
+
                       <label className="text-white text-sm font-medium mb-1 block">
                         Contacto de emergencia
                       </label>
+
+
                       <input
                         type="text"
                         name="emergencyContact"
                         placeholder="Ej. María Hernández"
-                        value={formData.emergencyContact}
-                        onChange={handleInputChange}
+                        value={
+                          formData.emergencyContact
+                        }
+                        onChange={
+                          handleInputChange
+                        }
                         className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none transition-colors"
                       />
+
                     </div>
+
+
                     <div>
+
                       <label className="text-white text-sm font-medium mb-1 block">
                         Teléfono de emergencia
                       </label>
+
+
                       <input
-                        type="text"
+                        type="tel"
                         name="emergencyPhone"
                         placeholder="961 000 0000"
-                        value={formData.emergencyPhone}
-                        onChange={handleInputChange}
+                        value={
+                          formData.emergencyPhone
+                        }
+                        onChange={
+                          handleInputChange
+                        }
                         className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none transition-colors"
                       />
+
                     </div>
+
                   </div>
-                  <p className="text-gray-500 text-xs mt-2">Opcional</p>
+
+
+                  <p className="text-gray-500 text-xs mt-2">
+                    Opcional
+                  </p>
+
                 </div>
 
-                {/* Información del miembro */}
-                <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6">
-                  <h3 className="text-white font-bold mb-4">Información del miembro</h3>
+
+                {/* ================================================= */}
+                {/* INFORMACIÓN DEL MIEMBRO */}
+                {/* ================================================= */}
+
+                <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6 mt-6">
+
+                  <h3 className="text-white font-bold mb-4">
+                    Información del miembro
+                  </h3>
+
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
                     <div>
+
                       <label className="text-white text-sm font-medium mb-1 block">
                         ID del miembro
                       </label>
+
+
                       <div className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-4 py-2.5">
-                        <span className="text-[#00ff88] font-mono">{memberId}</span>
-                        <span className="text-gray-500 text-xs ml-auto">Generado automáticamente</span>
+
+                        <span className="text-[#00ff88] font-mono">
+                          {
+                            memberId
+                          }
+                        </span>
+
+
+                        <span className="text-gray-500 text-xs ml-auto">
+                          Generado automáticamente
+                        </span>
+
                       </div>
+
                     </div>
+
+
                     <div>
+
                       <label className="text-white text-sm font-medium mb-1 block">
                         Fecha de registro
                       </label>
+
+
                       <div className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-4 py-2.5">
-                        <span className="text-gray-300">{registrationDate}</span>
-                        <span className="text-gray-500 text-xs ml-auto">Generada automáticamente</span>
+
+                        <span className="text-gray-300">
+                          {
+                            registrationDate
+                          }
+                        </span>
+
+
+                        <span className="text-gray-500 text-xs ml-auto">
+                          Generada automáticamente
+                        </span>
+
                       </div>
+
                     </div>
+
                   </div>
+
+
                   <div className="mt-4 p-4 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl">
+
                     <div className="flex items-center gap-2">
+
                       <span className="w-2 h-2 bg-gray-500 rounded-full" />
-                      <span className="text-white text-sm font-medium">Registrado</span>
-                      <span className="text-gray-500 text-xs ml-auto">Sin suscripción activa</span>
+
+                      <span className="text-white text-sm font-medium">
+                        Registro en proceso
+                      </span>
+
+
+                      <span className="text-gray-500 text-xs ml-auto">
+                        Sin suscripción activa
+                      </span>
+
                     </div>
-                    <p className="text-gray-500 text-xs mt-1">Este miembro todavía no tiene una suscripción activa.</p>
+
+
+                    <p className="text-gray-500 text-xs mt-1">
+                      El miembro se guardará definitivamente cuando completes los tres pasos.
+                    </p>
+
                   </div>
+
                 </div>
 
-                {/* Notas adicionales */}
-                <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6">
+
+                {/* ================================================= */}
+                {/* NOTAS */}
+                {/* ================================================= */}
+
+                <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6 mt-6">
+
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-white font-bold">Notas adicionales</h3>
-                    <span className="text-gray-500 text-xs">Opcional</span>
+
+                    <h3 className="text-white font-bold">
+                      Notas adicionales
+                    </h3>
+
+
+                    <span className="text-gray-500 text-xs">
+                      Opcional
+                    </span>
+
                   </div>
+
+
                   <textarea
                     name="notes"
                     placeholder="Agrega información importante sobre este miembro..."
-                    value={formData.notes}
-                    onChange={handleInputChange}
-                    rows="3"
+                    value={
+                      formData.notes
+                    }
+                    onChange={
+                      handleInputChange
+                    }
+                    rows={3}
                     className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none transition-colors resize-none"
                   />
+
                 </div>
 
-                {/* Botones inferiores */}
-                <div className="flex flex-col items-end gap-3 pt-4">
+
+                {/* ================================================= */}
+                {/* BOTÓN INFERIOR */}
+                {/* ================================================= */}
+
+                <div className="flex flex-col items-end gap-3 pt-6">
+
                   <div className="flex gap-3 w-full sm:w-auto">
-                    <button
-                      type="button"
-                      onClick={handleSubmit}
-                      className="px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-gray-400 hover:border-[#00ff88] hover:text-white transition-colors"
-                    >
-                      Guardar sin suscripción
-                    </button>
+
                     <button
                       type="submit"
                       className="px-6 py-2 bg-[#00ff88] text-black rounded-xl font-bold hover:bg-[#00cc6a] transition-all duration-300 hover:shadow-[0_0_30px_rgba(0,255,136,0.3)] flex items-center gap-2"
                     >
+
                       Guardar y continuar
-                      <ChevronRight size={18} />
+
+                      <ChevronRight
+                        size={18}
+                      />
+
                     </button>
+
                   </div>
+
+
                   <p className="text-gray-500 text-xs">
                     Continuarás con la configuración de la suscripción.
                   </p>
+
                 </div>
+
               </form>
+
             </div>
 
-            {/* Panel lateral de resumen */}
+
+            {/* ================================================= */}
+            {/* RESUMEN LATERAL */}
+            {/* ================================================= */}
+
             <div className="xl:col-span-1">
+
               <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6 sticky top-6">
-                <h3 className="text-white font-bold mb-4">Resumen del miembro</h3>
-                
+
+                <h3 className="text-white font-bold mb-4">
+                  Resumen del miembro
+                </h3>
+
+
                 <div className="flex flex-col items-center text-center mb-4">
+
                   <div className="w-24 h-24 rounded-full bg-[#1a1a1a] border-2 border-[#2a2a2a] flex items-center justify-center overflow-hidden">
-                    {formData.profilePhotoUrl ? (
-                      <img 
-                        src={formData.profilePhotoUrl} 
-                        alt="Foto de perfil" 
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <User size={36} className="text-gray-500" />
-                    )}
+
+                    {
+                      formData.profilePhotoUrl
+                        ? (
+
+                          <img
+                            src={
+                              formData.profilePhotoUrl
+                            }
+                            alt="Foto de perfil"
+                            className="w-full h-full object-cover"
+                          />
+
+                        )
+                        : (
+
+                          <User
+                            size={36}
+                            className="text-gray-500"
+                          />
+
+                        )
+                    }
+
                   </div>
+
+
                   <div>
+
                     <p className="text-white font-bold text-lg">
-                      {formData.firstName || formData.lastName ? 
-                        `${formData.firstName} ${formData.lastName}`.trim() : 
-                        'Nuevo miembro'
+
+                      {
+                        formData.firstName ||
+                        formData.lastName
+
+                          ? `${formData.firstName} ${formData.lastName}`.trim()
+
+                          : 'Nuevo miembro'
+                      }
+
+                    </p>
+
+
+                    <p className="text-gray-500 text-sm font-mono">
+                      {
+                        memberId
                       }
                     </p>
-                    <p className="text-gray-500 text-sm font-mono">{memberId}</p>
+
                   </div>
+
                 </div>
+
 
                 <div className="space-y-3 border-t border-[#1a1a1a] pt-4">
+
                   <div className="flex justify-between">
-                    <span className="text-gray-400 text-sm">Estado</span>
-                    <span className="px-2 py-0.5 bg-gray-500/20 text-gray-400 rounded-full text-xs font-medium">
-                      Sin suscripción
+
+                    <span className="text-gray-400 text-sm">
+                      Estado
                     </span>
+
+
+                    <span className="px-2 py-0.5 bg-gray-500/20 text-gray-400 rounded-full text-xs font-medium">
+                      En registro
+                    </span>
+
                   </div>
+
+
                   <div className="flex justify-between">
-                    <span className="text-gray-400 text-sm">Fecha de registro</span>
-                    <span className="text-white text-sm">{registrationDate}</span>
+
+                    <span className="text-gray-400 text-sm">
+                      Fecha de registro
+                    </span>
+
+
+                    <span className="text-white text-sm">
+                      {
+                        registrationDate
+                      }
+                    </span>
+
                   </div>
+
+
                   <div className="flex justify-between">
-                    <span className="text-gray-400 text-sm">Teléfono</span>
-                    <span className="text-white text-sm">{formData.phone || '—'}</span>
+
+                    <span className="text-gray-400 text-sm">
+                      Teléfono
+                    </span>
+
+
+                    <span className="text-white text-sm">
+                      {
+                        formData.phone ||
+                        '—'
+                      }
+                    </span>
+
                   </div>
+
+
                   <div className="flex justify-between">
-                    <span className="text-gray-400 text-sm">Correo</span>
-                    <span className="text-white text-sm truncate max-w-[120px]">{formData.email || '—'}</span>
+
+                    <span className="text-gray-400 text-sm">
+                      Correo
+                    </span>
+
+
+                    <span className="text-white text-sm truncate max-w-[140px]">
+                      {
+                        formData.email ||
+                        '—'
+                      }
+                    </span>
+
                   </div>
+
                 </div>
+
 
                 <div className="border-t border-[#1a1a1a] pt-4 mt-4">
-                  <h4 className="text-white text-sm font-medium mb-3">¿Qué sigue?</h4>
+
+                  <h4 className="text-white text-sm font-medium mb-3">
+                    ¿Qué sigue?
+                  </h4>
+
+
                   <p className="text-gray-400 text-sm mb-3">
-                    Después de guardar al miembro podrás activar su suscripción de 30 días.
+                    Después continuarás con la suscripción y posteriormente configurarás los métodos de acceso.
                   </p>
+
+
                   <div className="space-y-2">
+
+
                     <div className="flex items-center gap-2">
+
                       <div className="w-6 h-6 rounded-full bg-[#00ff88]/10 flex items-center justify-center">
-                        <UserPlus size={14} className="text-[#00ff88]" />
+
+                        <UserPlus
+                          size={14}
+                          className="text-[#00ff88]"
+                        />
+
                       </div>
-                      <span className="text-gray-300 text-sm">Registrar miembro</span>
+
+
+                      <span className="text-gray-300 text-sm">
+                        Registrar datos
+                      </span>
+
                     </div>
+
+
                     <div className="flex items-center gap-2">
+
                       <div className="w-6 h-6 rounded-full bg-[#1a1a1a] flex items-center justify-center">
-                        <ChevronRight size={14} className="text-gray-500" />
+
+                        <ChevronRight
+                          size={14}
+                          className="text-gray-500"
+                        />
+
                       </div>
-                      <span className="text-gray-500 text-sm">Activar suscripción</span>
+
+
+                      <span className="text-gray-500 text-sm">
+                        Activar suscripción
+                      </span>
+
                     </div>
+
+
                     <div className="flex items-center gap-2">
+
                       <div className="w-6 h-6 rounded-full bg-[#1a1a1a] flex items-center justify-center">
-                        <ChevronRight size={14} className="text-gray-500" />
+
+                        <ChevronRight
+                          size={14}
+                          className="text-gray-500"
+                        />
+
                       </div>
-                      <span className="text-gray-500 text-sm">Generar QR</span>
+
+
+                      <span className="text-gray-500 text-sm">
+                        Generar QR y PIN
+                      </span>
+
                     </div>
+
+
                     <div className="flex items-center gap-2">
+
                       <div className="w-6 h-6 rounded-full bg-[#1a1a1a] flex items-center justify-center">
-                        <ChevronRight size={14} className="text-gray-500" />
+
+                        <ChevronRight
+                          size={14}
+                          className="text-gray-500"
+                        />
+
                       </div>
-                      <span className="text-gray-500 text-sm">Listo para acceder</span>
+
+
+                      <span className="text-gray-500 text-sm">
+                        Registrar rostro
+                      </span>
+
                     </div>
+
+
+                    <div className="flex items-center gap-2">
+
+                      <div className="w-6 h-6 rounded-full bg-[#1a1a1a] flex items-center justify-center">
+
+                        <ChevronRight
+                          size={14}
+                          className="text-gray-500"
+                        />
+
+                      </div>
+
+
+                      <span className="text-gray-500 text-sm">
+                        Miembro listo para acceder
+                      </span>
+
+                    </div>
+
                   </div>
+
                 </div>
+
               </div>
+
             </div>
+
           </div>
+
         </main>
+
       </div>
 
-      {/* Modal de descartar cambios */}
-      {showDiscardModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-[#111111] border border-[#1a1a1a] rounded-2xl p-8 max-w-md w-full mx-4">
-            <div className="text-center">
-              <div className="w-16 h-16 rounded-full bg-yellow-500/10 flex items-center justify-center mx-auto mb-4">
-                <AlertCircle size={32} className="text-yellow-500" />
+
+      {/* ================================================= */}
+      {/* MODAL DESCARTAR */}
+      {/* ================================================= */}
+
+      {
+        showDiscardModal &&
+        (
+
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+
+            <div className="bg-[#111111] border border-[#1a1a1a] rounded-2xl p-8 max-w-md w-full mx-4">
+
+              <div className="text-center">
+
+                <div className="w-16 h-16 rounded-full bg-yellow-500/10 flex items-center justify-center mx-auto mb-4">
+
+                  <AlertCircle
+                    size={32}
+                    className="text-yellow-500"
+                  />
+
+                </div>
+
+
+                <h2 className="text-white text-xl font-bold mb-2">
+                  ¿Descartar cambios?
+                </h2>
+
+
+                <p className="text-gray-400 mb-6">
+                  Los datos que ingresaste todavía no han sido guardados.
+                </p>
+
+
+                <div className="flex gap-3">
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowDiscardModal(
+                        false
+                      )
+                    }
+                    className="flex-1 px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white hover:border-[#00ff88] transition-colors"
+                  >
+                    Seguir editando
+                  </button>
+
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate(
+                        '/members'
+                      )
+                    }
+                    className="flex-1 px-4 py-2 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500/20 transition-colors"
+                  >
+                    Descartar
+                  </button>
+
+                </div>
+
               </div>
-              <h2 className="text-white text-xl font-bold mb-2">¿Descartar cambios?</h2>
-              <p className="text-gray-400 mb-6">
-                Los datos que ingresaste todavía no han sido guardados.
-              </p>
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setShowDiscardModal(false)}
-                  className="flex-1 px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white hover:border-[#00ff88] transition-colors"
-                >
-                  Seguir editando
-                </button>
-                <button 
-                  onClick={() => navigate('/members')}
-                  className="flex-1 px-4 py-2 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500/20 transition-colors"
-                >
-                  Descartar
-                </button>
+
+            </div>
+
+          </div>
+
+        )
+      }
+
+
+      {/* ================================================= */}
+      {/* ADVERTENCIA LISTA NEGRA */}
+      {/* ================================================= */}
+
+      {
+        showBlacklistModal &&
+        blacklistMatches.length > 0 &&
+        (
+          <div className="fixed inset-0 z-[9500] flex items-center justify-center p-4">
+
+            <button
+              type="button"
+              aria-label="Cerrar advertencia"
+              onClick={() => setShowBlacklistModal(false)}
+              className="absolute inset-0 bg-black/85 backdrop-blur-[4px]"
+            />
+
+            <div className="relative w-full max-w-2xl bg-[#101010] border border-red-500/25 rounded-[26px] shadow-[0_35px_120px_rgba(0,0,0,0.85)] overflow-hidden">
+
+              <div className="h-px bg-gradient-to-r from-transparent via-red-500/80 to-transparent" />
+
+              <div className="p-7 sm:p-8">
+
+                <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center mb-5">
+                  <AlertCircle size={30} className="text-red-400" />
+                </div>
+
+                <h2 className="text-white text-2xl font-black">
+                  Coincidencia en lista negra
+                </h2>
+
+                <p className="text-gray-400 text-sm mt-2 leading-6">
+                  Encontramos antecedentes que coinciden con los datos ingresados. Revisa la información antes de continuar con un nuevo registro.
+                </p>
+
+                <div className="space-y-3 mt-6 max-h-[320px] overflow-y-auto pr-1">
+
+                  {blacklistMatches.map(match => (
+                    <div
+                      key={match.id}
+                      className="rounded-xl bg-red-500/5 border border-red-500/15 p-4"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                        <div>
+                          <p className="text-white font-bold">
+                            {match.fullName || `${match.firstName || ''} ${match.lastName || ''}`.trim() || 'Persona registrada'}
+                          </p>
+                          <p className="text-gray-500 text-xs font-mono mt-1">
+                            ID anterior: {match.previousMemberId || '—'}
+                          </p>
+                        </div>
+
+                        <span className="px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 text-[11px] font-bold whitespace-nowrap">
+                          Coincide por {match.matchedBy?.join(', ') || 'datos personales'}
+                        </span>
+                      </div>
+
+                      <div className="mt-3">
+                        <p className="text-gray-500 text-[11px] uppercase tracking-wider">
+                          Motivo anterior
+                        </p>
+                        <p className="text-gray-300 text-sm mt-1">
+                          {match.reason || 'Sin motivo registrado'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+
+                </div>
+
+                {!canAuthorizeBlacklist && (
+                  <div className="mt-5 p-4 rounded-xl bg-yellow-500/5 border border-yellow-500/20">
+                    <p className="text-yellow-500 text-sm font-semibold">
+                      Se requiere autorización
+                    </p>
+                    <p className="text-gray-400 text-xs mt-1">
+                      Un encargado no puede ignorar esta advertencia. Debe solicitar al dueño o a un administrador que continúe el registro.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-3 mt-7">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBlacklistModal(false);
+                      navigate('/members');
+                    }}
+                    className="flex-1 px-5 py-3 bg-[#191919] border border-[#2a2a2a] rounded-xl text-white font-medium hover:border-[#3a3a3a]"
+                  >
+                    Cancelar registro
+                  </button>
+
+                  {canAuthorizeBlacklist && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        blacklistBypassRef.current = true;
+                        setShowBlacklistModal(false);
+                        handleSubmit();
+                      }}
+                      className="flex-1 px-5 py-3 rounded-xl bg-red-500/15 border border-red-500/25 text-red-400 font-bold hover:bg-red-500/20"
+                    >
+                      Continuar bajo autorización
+                    </button>
+                  )}
+                </div>
+
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
+
     </div>
+
   );
+
 };
+
 
 export default RegisterMemberPage;

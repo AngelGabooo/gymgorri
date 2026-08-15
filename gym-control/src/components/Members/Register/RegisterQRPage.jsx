@@ -30,6 +30,11 @@ import {
 import Sidebar from '../../Layout/Sidebar';
 import Header from '../../Layout/Header';
 import FaceEnrollment from '../../Access/FaceEnrollment';
+import PaymentReceipt from '../../Payments/PaymentReceipt';
+
+import {
+  useGymSettings
+} from '../../../context/GymSettingsContext';
   
 import {
   generateFaceId,
@@ -44,10 +49,46 @@ import {
   findDuplicateFace,
 } from '../../../services/faceService';
 
+
+const PAYMENTS_KEY = 'gym_control_payments';
+const SUBSCRIPTION_HISTORY_KEY = 'gym_control_subscription_history';
+
+const readLocalArray = (key) => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error(`Error leyendo ${key}:`, error);
+    return [];
+  }
+};
+
+const saveLocalArray = (key, data) => {
+  localStorage.setItem(key, JSON.stringify(data));
+  window.dispatchEvent(new Event('gym-storage-update'));
+};
+
+const createLocalId = (prefix) => {
+  if (window.crypto?.randomUUID) {
+    return `${prefix}-${window.crypto.randomUUID()}`;
+  }
+
+  return `${prefix}-${Date.now()}-${Math.random()
+    .toString(36)
+    .substring(2, 8)}`;
+};
+
+
 const RegisterQRPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const credentialRef = useRef(null);
+  const receiptRef = useRef(null);
+
+  const { settings } = useGymSettings();
 
   // ======================================================
   // DATOS PASO 1 Y 2
@@ -95,6 +136,7 @@ const RegisterQRPage = () => {
 
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showFinalModal, setShowFinalModal] = useState(false);
+  const [lastPayment, setLastPayment] = useState(null);
 
   const [showFaceEnrollment, setShowFaceEnrollment] = useState(false);
   const [faceData, setFaceData] = useState(null);
@@ -335,6 +377,8 @@ const RegisterQRPage = () => {
     setIsSaving(true);
 
     try {
+      const now = new Date().toISOString();
+
       const finalMember = {
         ...memberData,
 
@@ -373,19 +417,371 @@ const RegisterQRPage = () => {
         },
 
         registrationDate:
-          memberData.registrationDate || new Date().toISOString(),
+          memberData.registrationDate || now,
 
-        createdAt: memberData.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt:
+          memberData.createdAt || now,
+
+        updatedAt:
+          now,
       };
 
+      // ====================================================
+      // GUARDAR MIEMBRO
+      // ====================================================
+
       saveMember(finalMember);
+
+      // ====================================================
+      // REGISTRAR AUTOMÁTICAMENTE EL PAGO INICIAL
+      // ====================================================
+      //
+      // El pago viene desde el Paso 2.
+      // No se vuelve a capturar manualmente en Pagos.
+      //
+      // EFECTIVO:
+      //   amount = costo del plan
+      //   receivedAmount = efectivo recibido
+      //   change = cambio calculado
+      //
+      // TARJETA / TRANSFERENCIA / OTRO:
+      //   amount = costo del plan
+      //   receivedAmount = costo del plan
+      //   change = 0
+      //
+      // ====================================================
+
+      const payments =
+        readLocalArray(PAYMENTS_KEY);
+
+      // Evitar duplicar el pago si por alguna razón
+      // el usuario presiona Finalizar más de una vez.
+      const existingInitialPayment =
+        payments.find(
+          (payment) =>
+            payment.memberId === memberId &&
+            payment.type === 'subscription_initial'
+        );
+
+      let paymentId =
+        existingInitialPayment?.id || null;
+
+      if (existingInitialPayment) {
+        setLastPayment(existingInitialPayment);
+      }
+
+      if (!existingInitialPayment) {
+        const memberName =
+          `${finalMember.firstName || ''} ${finalMember.lastName || ''}`.trim() ||
+          'Miembro';
+
+        const paymentMethod =
+          subscriptionData.paymentMethod ||
+          'no_registrado';
+
+        const planAmount =
+          Number(
+            subscriptionData.amount ??
+            subscriptionData.price ??
+            0
+          );
+
+        const receivedAmount =
+          paymentMethod === 'efectivo'
+            ? Number(
+                subscriptionData.receivedAmount ??
+                planAmount
+              )
+            : planAmount;
+
+        const change =
+          paymentMethod === 'efectivo'
+            ? Number(
+                subscriptionData.change ||
+                0
+              )
+            : 0;
+
+        const paymentRecord = {
+          id:
+            createLocalId(settings?.receiptPrefix || 'PAY'),
+
+          memberId,
+
+          memberName,
+
+          concept:
+            'Inscripción / suscripción inicial',
+
+          type:
+            'subscription_initial',
+
+          source:
+            'member_registration',
+
+          plan:
+            subscriptionData.plan ||
+            '',
+
+          planLabel:
+            subscriptionData.planLabel ||
+            subscriptionData.plan ||
+            'Suscripción',
+
+          days:
+            Number(
+              subscriptionData.days ||
+              0
+            ),
+
+          period:
+            `${subscriptionData.startDate || '—'} - ${subscriptionData.endDate || '—'}`,
+
+          method:
+            paymentMethod,
+
+          paymentMethod,
+
+          amount:
+            planAmount.toFixed(2),
+
+          originalAmount:
+            Number(
+              subscriptionData.originalAmount ??
+              subscriptionData.price ??
+              planAmount
+            ).toFixed(2),
+
+          discountAmount:
+            Number(
+              subscriptionData.discountAmount ||
+              0
+            ).toFixed(2),
+
+          promotion:
+            subscriptionData.promotion ||
+            null,
+
+          receivedAmount:
+            receivedAmount.toFixed(2),
+
+          change:
+            change.toFixed(2),
+
+          reference:
+            subscriptionData.reference ||
+            '',
+
+          notes:
+            subscriptionData.notes ||
+            '',
+
+          currency:
+            subscriptionData.currency ||
+            'MXN',
+
+          status:
+            'completed',
+
+          createdAt:
+            now,
+
+          date:
+            now
+        };
+
+        payments.unshift(
+          paymentRecord
+        );
+
+        saveLocalArray(
+          PAYMENTS_KEY,
+          payments
+        );
+
+        paymentId =
+          paymentRecord.id;
+
+        setLastPayment(paymentRecord);
+      }
+
+      // ====================================================
+      // HISTORIAL DE SUSCRIPCIÓN INICIAL
+      // ====================================================
+
+      const history =
+        readLocalArray(
+          SUBSCRIPTION_HISTORY_KEY
+        );
+
+      const existingInitialHistory =
+        history.find(
+          (record) =>
+            record.memberId === memberId &&
+            record.type === 'initial'
+        );
+
+      if (!existingInitialHistory) {
+        history.unshift({
+          id:
+            createLocalId('SUBH'),
+
+          memberId,
+
+          memberName:
+            `${finalMember.firstName || ''} ${finalMember.lastName || ''}`.trim() ||
+            'Miembro',
+
+          type:
+            'initial',
+
+          source:
+            'member_registration',
+
+          previousSubscription:
+            null,
+
+          subscription: {
+            ...finalMember.subscription
+          },
+
+          paymentId,
+
+          notes:
+            subscriptionData.notes ||
+            '',
+
+          createdAt:
+            now
+        });
+
+        saveLocalArray(
+          SUBSCRIPTION_HISTORY_KEY,
+          history
+        );
+      }
+
+      console.log(
+        '✅ Miembro registrado:',
+        finalMember
+      );
+
+      console.log(
+        '💰 Pago inicial registrado automáticamente:',
+        paymentId
+      );
+
       setShowFinalModal(true);
     } catch (error) {
-      console.error('Error guardando miembro:', error);
-      setSaveError(error?.message || 'No se pudo guardar el miembro.');
+      console.error(
+        'Error guardando miembro y pago:',
+        error
+      );
+
+      setSaveError(
+        error?.message ||
+        'No se pudo guardar el miembro y registrar su pago.'
+      );
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // ======================================================
+  // TICKET DE PAGO
+  // ======================================================
+
+  const handleDownloadReceipt = async () => {
+    if (!receiptRef.current) {
+      return;
+    }
+
+    try {
+      const html2canvasModule = await import('html2canvas');
+      const html2canvas = html2canvasModule.default;
+
+      const canvas = await html2canvas(receiptRef.current, {
+        scale: 3,
+        backgroundColor: '#f8f8f6',
+        useCORS: true,
+        allowTaint: true
+      });
+
+      const link = document.createElement('a');
+      link.download = `Ticket-${lastPayment?.id || memberId}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (error) {
+      console.error('Error descargando ticket:', error);
+      setSaveError('No se pudo descargar el ticket.');
+    }
+  };
+
+  const handlePrintReceipt = async () => {
+    if (!receiptRef.current) {
+      return;
+    }
+
+    try {
+      const html2canvasModule = await import('html2canvas');
+      const html2canvas = html2canvasModule.default;
+
+      const canvas = await html2canvas(receiptRef.current, {
+        scale: 3,
+        backgroundColor: '#f8f8f6',
+        useCORS: true,
+        allowTaint: true
+      });
+
+      const image = canvas.toDataURL('image/png');
+      const printWindow = window.open('', '_blank', 'width=700,height=900');
+
+      if (!printWindow) {
+        setSaveError('El navegador bloqueó la ventana de impresión.');
+        return;
+      }
+
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Ticket ${lastPayment?.id || memberId}</title>
+            <style>
+              * { box-sizing: border-box; }
+              body {
+                margin: 0;
+                min-height: 100vh;
+                display: flex;
+                align-items: flex-start;
+                justify-content: center;
+                padding: 18px;
+                background: #fff;
+              }
+              img {
+                width: 100%;
+                max-width: 430px;
+                height: auto;
+              }
+              @media print {
+                body { padding: 0; }
+              }
+            </style>
+          </head>
+          <body>
+            <img src="${image}" />
+            <script>
+              window.onload = function () {
+                window.print();
+                window.close();
+              };
+            <\/script>
+          </body>
+        </html>
+      `);
+
+      printWindow.document.close();
+    } catch (error) {
+      console.error('Error imprimiendo ticket:', error);
+      setSaveError('No se pudo imprimir el ticket.');
     }
   };
 
@@ -1416,64 +1812,136 @@ const RegisterQRPage = () => {
       )}
 
       {/* ================================================= */}
-      {/* MODAL FINAL */}
+      {/* MODAL FINAL + TICKET */}
       {/* ================================================= */}
 
       {showFinalModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-[#111111] border border-[#00ff88]/20 rounded-2xl p-8 max-w-md w-full mx-4">
-            <div className="text-center">
-              <div className="w-20 h-20 rounded-full bg-[#00ff88]/10 flex items-center justify-center mx-auto mb-4">
-                <CheckCircle size={40} className="text-[#00ff88]" />
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="w-full max-w-5xl my-auto grid grid-cols-1 lg:grid-cols-[0.78fr_1.22fr] gap-5">
+
+            <div className="bg-[#111111] border border-[#00ff88]/20 rounded-2xl p-6 h-fit lg:sticky lg:top-4">
+              <div className="w-16 h-16 rounded-full bg-[#00ff88]/10 flex items-center justify-center mb-4">
+                <CheckCircle size={32} className="text-[#00ff88]" />
               </div>
 
-              <h2 className="text-white text-2xl font-bold mb-2">
+              <h2 className="text-white text-2xl font-bold">
                 Registro completado
               </h2>
 
-              <p className="text-gray-400 mb-4">
-                {fullName} ya tiene sus tres métodos de acceso configurados.
+              <p className="text-gray-400 text-sm mt-2">
+                {fullName} fue registrado correctamente y la suscripción quedó marcada como pagada.
               </p>
 
-              <div className="bg-[#1a1a1a] rounded-xl p-4 mb-6 text-left space-y-2">
+              <div className="bg-[#1a1a1a] rounded-xl p-4 mt-5 text-left space-y-2">
                 <FinalRow label="ID" value={memberId} />
+                <FinalRow
+                  label="Plan"
+                  value={subscriptionData.planLabel || subscriptionData.plan || 'Suscripción'}
+                />
+                <FinalRow
+                  label="Pago"
+                  value={`$${Number(lastPayment?.amount || subscriptionData.amount || 0).toFixed(2)} ${lastPayment?.currency || subscriptionData.currency || settings?.currency || 'MXN'}`}
+                />
+                <FinalRow label="Estado" value="PAGADO" />
                 <FinalRow label="QR" value="Habilitado" />
                 <FinalRow label="PIN" value={memberPin} />
                 <FinalRow label="Rostro" value="Registrado" />
-                <FinalRow
-                  label="Suscripción"
-                  value={`Activa hasta ${subscriptionData.endDate}`}
-                />
               </div>
 
-              <div className="flex flex-col gap-2">
+              <div className="mt-5 p-4 rounded-xl bg-[#00ff88]/5 border border-[#00ff88]/15">
+                <p className="text-[#00ff88] text-sm font-semibold">
+                  Ticket generado automáticamente
+                </p>
+                <p className="text-gray-400 text-xs mt-1">
+                  El comprobante utiliza el nombre, logo, dirección, teléfono, moneda y mensaje configurados en Configuración → Recibos y pagos.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2 mt-5">
                 <button
+                  type="button"
+                  onClick={handlePrintReceipt}
+                  className="w-full px-4 py-3 bg-[#00ff88] text-black rounded-xl font-bold hover:bg-[#00cc6a] flex items-center justify-center gap-2"
+                >
+                  <Printer size={18} />
+                  Imprimir ticket
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadReceipt}
+                  className="w-full px-4 py-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white hover:border-[#00ff88] flex items-center justify-center gap-2"
+                >
+                  <Download size={18} />
+                  Descargar ticket PNG
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-2 mt-4">
+                <button
+                  type="button"
                   onClick={handleViewProfile}
-                  className="w-full px-4 py-3 bg-[#00ff88] text-black rounded-xl font-bold hover:bg-[#00cc6a]"
+                  className="w-full px-4 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white hover:border-[#00ff88]"
                 >
                   Ver perfil
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => {
                     setShowFinalModal(false);
                     navigate('/members/register');
                   }}
-                  className="w-full px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white hover:border-[#00ff88]"
+                  className="w-full px-4 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl text-white hover:border-[#00ff88]"
                 >
                   Registrar otro miembro
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => {
                     setShowFinalModal(false);
                     navigate('/members');
                   }}
-                  className="text-gray-500 text-sm hover:text-white transition-colors"
+                  className="text-gray-500 text-sm hover:text-white transition-colors py-2"
                 >
                   Cerrar
                 </button>
               </div>
+            </div>
+
+            <div className="flex flex-col items-center">
+              <div className="w-full flex items-center justify-between mb-3 px-1">
+                <div>
+                  <p className="text-white font-bold">Vista previa del ticket</p>
+                  <p className="text-gray-500 text-xs">Sin código QR · comprobante de pago</p>
+                </div>
+
+                <span className="px-3 py-1 rounded-full bg-[#00ff88]/10 text-[#00ff88] text-xs font-semibold">
+                  PAGADO
+                </span>
+              </div>
+
+              <PaymentReceipt
+                ref={receiptRef}
+                settings={settings}
+                payment={lastPayment || {
+                  id: `${settings?.receiptPrefix || 'PAY'}-${memberId}`,
+                  memberId,
+                  memberName: fullName,
+                  plan: subscriptionData.plan,
+                  planLabel: subscriptionData.planLabel,
+                  amount: subscriptionData.amount || subscriptionData.price || 0,
+                  paymentMethod: subscriptionData.paymentMethod,
+                  currency: subscriptionData.currency || settings?.currency || 'MXN',
+                  createdAt: new Date().toISOString()
+                }}
+                member={{
+                  ...memberData,
+                  id: memberId
+                }}
+                subscription={subscriptionData}
+              />
             </div>
           </div>
         </div>
