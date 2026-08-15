@@ -17,7 +17,8 @@ import {
   DEFAULT_RECEPTION_PERMISSIONS,
   getRoleLabel,
   normalizePermissions,
-  refreshCurrentSession
+  refreshCurrentSession,
+  getCurrentSession
 } from '../../services/authService';
 
 import {
@@ -68,6 +69,14 @@ import {
 import {
   hashValue
 } from '../../utils/memberId';
+
+import {
+  ADMIN_SECURITY_ACTIONS,
+  getAdminSecurityAudit,
+  getAdminSecurityConfig,
+  setAdminAuthorizationPassword,
+  updateAdminProtectionSettings
+} from '../../services/adminSecurityService';
 
 
 // ======================================================
@@ -324,6 +333,9 @@ const SettingsPage = () => {
   const navigate =
     useNavigate();
 
+  const currentSession =
+    getCurrentSession();
+
 
   const {
     settings:
@@ -346,6 +358,108 @@ const SettingsPage = () => {
     setActiveTab
   ] = useState(
     'general'
+  );
+
+
+  // ======================================================
+  // SEGURIDAD ADMINISTRATIVA
+  // ======================================================
+
+  const [
+    adminSecurity,
+    setAdminSecurity
+  ] = useState(
+    () =>
+      getAdminSecurityConfig()
+  );
+
+
+  const [
+    adminPassword,
+    setAdminPassword
+  ] = useState('');
+
+
+  const [
+    adminPasswordConfirm,
+    setAdminPasswordConfirm
+  ] = useState('');
+
+
+  const [
+    showAdminPassword,
+    setShowAdminPassword
+  ] = useState(false);
+
+
+  const [
+    securitySaving,
+    setSecuritySaving
+  ] = useState(false);
+
+
+  const [
+    securityMessage,
+    setSecurityMessage
+  ] = useState({
+    type: '',
+    text: ''
+  });
+
+
+  const [
+    securityAudit,
+    setSecurityAudit
+  ] = useState(
+    () =>
+      getAdminSecurityAudit()
+  );
+
+
+  useEffect(
+    () => {
+
+      const refreshSecurity =
+        () => {
+
+          setAdminSecurity(
+            getAdminSecurityConfig()
+          );
+
+          setSecurityAudit(
+            getAdminSecurityAudit()
+          );
+
+        };
+
+
+      window.addEventListener(
+        'gym-admin-security-update',
+        refreshSecurity
+      );
+
+      window.addEventListener(
+        'gym-admin-security-audit-update',
+        refreshSecurity
+      );
+
+
+      return () => {
+
+        window.removeEventListener(
+          'gym-admin-security-update',
+          refreshSecurity
+        );
+
+        window.removeEventListener(
+          'gym-admin-security-audit-update',
+          refreshSecurity
+        );
+
+      };
+
+    },
+    []
   );
 
 
@@ -689,6 +803,14 @@ const [
 
       label:
         'Usuarios del sistema'
+    },
+
+    {
+      id:
+        'seguridad',
+
+      label:
+        'Seguridad'
     }
 
   ];
@@ -5597,6 +5719,783 @@ const renderSuscripcionesTab =
 
 
   // ======================================================
+  // SEGURIDAD ADMINISTRATIVA
+  // ======================================================
+
+  const renderSeguridadTab =
+    () => {
+
+      const canManageSecurity =
+        currentSession?.role ===
+          'owner' ||
+        currentSession?.role ===
+          'admin';
+
+
+      const protectionItems = [
+        {
+          id: 'member_deactivate',
+          label: 'Dar de baja miembros',
+          description: 'Solicita la contraseña antes de desactivar un miembro.'
+        },
+        {
+          id: 'blacklist_clear',
+          label: 'Quitar de lista negra',
+          description: 'Protege el retiro de antecedentes activos.'
+        },
+        {
+          id: 'blacklist_reactivate',
+          label: 'Reactivar alertas de lista negra',
+          description: 'Protege la reactivación de antecedentes retirados.'
+        },
+        {
+          id: 'regenerate_qr',
+          label: 'Regenerar código QR',
+          description: 'Evita cambiar el QR de un miembro sin autorización.'
+        },
+        {
+          id: 'regenerate_pin',
+          label: 'Regenerar PIN',
+          description: 'Evita generar un PIN nuevo sin autorización.'
+        },
+        {
+          id: 'payment_delete',
+          label: 'Eliminar pagos',
+          description: 'Solicita autorización antes de eliminar un registro de pago.'
+        }
+      ];
+
+
+      const handleProtectionToggle =
+        action => {
+
+          if (
+            !canManageSecurity
+          ) {
+            return;
+          }
+
+
+          const nextProtections = {
+            ...adminSecurity.protections,
+
+            [action]:
+              adminSecurity.protections?.[action] ===
+                false
+                ? true
+                : false
+          };
+
+
+          const next =
+            updateAdminProtectionSettings({
+              protections:
+                nextProtections,
+
+              actor:
+                currentSession
+            });
+
+
+          setAdminSecurity(
+            next
+          );
+
+
+          setSecurityMessage({
+            type:
+              'success',
+
+            text:
+              'Protecciones actualizadas.'
+          });
+
+        };
+
+
+      const handleSaveSecurityPassword =
+        async () => {
+
+          if (
+            !canManageSecurity
+          ) {
+
+            setSecurityMessage({
+              type:
+                'error',
+
+              text:
+                'Solo el dueño o un administrador puede cambiar esta contraseña.'
+            });
+
+            return;
+
+          }
+
+
+          if (
+            adminPassword.length <
+              4
+          ) {
+
+            setSecurityMessage({
+              type:
+                'error',
+
+              text:
+                'La contraseña debe tener al menos 4 caracteres.'
+            });
+
+            return;
+
+          }
+
+
+          if (
+            adminPassword !==
+            adminPasswordConfirm
+          ) {
+
+            setSecurityMessage({
+              type:
+                'error',
+
+              text:
+                'Las contraseñas no coinciden.'
+            });
+
+            return;
+
+          }
+
+
+          setSecuritySaving(
+            true
+          );
+
+          setSecurityMessage({
+            type: '',
+            text: ''
+          });
+
+
+          try {
+
+            const next =
+              await setAdminAuthorizationPassword({
+                password:
+                  adminPassword,
+
+                actor:
+                  currentSession,
+
+                protections:
+                  adminSecurity.protections
+              });
+
+
+            setAdminSecurity(
+              next
+            );
+
+            setAdminPassword(
+              ''
+            );
+
+            setAdminPasswordConfirm(
+              ''
+            );
+
+            setSecurityMessage({
+              type:
+                'success',
+
+              text:
+                adminSecurity.configured
+                  ? 'Contraseña administrativa actualizada correctamente.'
+                  : 'Contraseña administrativa configurada correctamente.'
+            });
+
+          } catch (
+            error
+          ) {
+
+            setSecurityMessage({
+              type:
+                'error',
+
+              text:
+                error?.message ||
+                'No se pudo guardar la contraseña administrativa.'
+            });
+
+          } finally {
+
+            setSecuritySaving(
+              false
+            );
+
+          }
+
+        };
+
+
+      return (
+
+        <div className="space-y-6">
+
+          <div className="bg-[#111111] border border-[#1a1a1a] rounded-2xl p-6">
+
+            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
+
+              <div className="flex items-start gap-4">
+
+                <div className="w-12 h-12 rounded-xl bg-[#00ff88]/10 border border-[#00ff88]/20 flex items-center justify-center shrink-0">
+
+                  <Shield
+                    size={24}
+                    className="text-[#00ff88]"
+                  />
+
+                </div>
+
+
+                <div>
+
+                  <h2 className="text-white text-xl font-black">
+                    Autorización administrativa
+                  </h2>
+
+                  <p className="text-gray-400 text-sm mt-1 max-w-2xl">
+                    Crea una contraseña independiente para confirmar acciones delicadas. Los encargados pueden trabajar normalmente, pero no podrán ejecutar las operaciones protegidas sin autorización.
+                  </p>
+
+                </div>
+
+              </div>
+
+
+              <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${
+                adminSecurity.configured
+                  ? 'bg-[#00ff88]/10 text-[#00ff88]'
+                  : 'bg-yellow-500/10 text-yellow-500'
+              }`}>
+
+                <span className={`w-2 h-2 rounded-full ${
+                  adminSecurity.configured
+                    ? 'bg-[#00ff88]'
+                    : 'bg-yellow-500'
+                }`}
+                />
+
+                {
+                  adminSecurity.configured
+                    ? 'CONFIGURADA'
+                    : 'PENDIENTE'
+                }
+
+              </span>
+
+            </div>
+
+
+            {
+              !canManageSecurity &&
+              (
+
+                <div className="mt-5 rounded-xl bg-yellow-500/5 border border-yellow-500/20 p-4">
+
+                  <p className="text-yellow-500 text-sm font-bold">
+                    Solo lectura
+                  </p>
+
+                  <p className="text-gray-400 text-xs mt-1">
+                    Solo el dueño o un administrador puede cambiar la contraseña y las protecciones.
+                  </p>
+
+                </div>
+
+              )
+            }
+
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
+
+              <div>
+
+                <label className="text-white text-sm font-medium block mb-2">
+                  {
+                    adminSecurity.configured
+                      ? 'Nueva contraseña administrativa'
+                      : 'Contraseña administrativa'
+                  }
+                </label>
+
+
+                <div className="relative">
+
+                  <input
+                    type={
+                      showAdminPassword
+                        ? 'text'
+                        : 'password'
+                    }
+                    value={
+                      adminPassword
+                    }
+                    disabled={
+                      !canManageSecurity ||
+                      securitySaving
+                    }
+                    onChange={
+                      event => {
+
+                        setAdminPassword(
+                          event.target.value
+                        );
+
+                        setSecurityMessage({
+                          type: '',
+                          text: ''
+                        });
+
+                      }
+                    }
+                    placeholder="Mínimo 4 caracteres"
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-4 pr-11 py-3 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none disabled:opacity-50"
+                  />
+
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowAdminPassword(
+                        previous =>
+                          !previous
+                      )
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                  >
+                    {
+                      showAdminPassword
+                        ? <EyeOff size={18} />
+                        : <Eye size={18} />
+                    }
+                  </button>
+
+                </div>
+
+              </div>
+
+
+              <div>
+
+                <label className="text-white text-sm font-medium block mb-2">
+                  Confirmar contraseña
+                </label>
+
+                <input
+                  type={
+                    showAdminPassword
+                      ? 'text'
+                      : 'password'
+                  }
+                  value={
+                    adminPasswordConfirm
+                  }
+                  disabled={
+                    !canManageSecurity ||
+                    securitySaving
+                  }
+                  onChange={
+                    event => {
+
+                      setAdminPasswordConfirm(
+                        event.target.value
+                      );
+
+                      setSecurityMessage({
+                        type: '',
+                        text: ''
+                      });
+
+                    }
+                  }
+                  placeholder="Repite la contraseña"
+                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:border-[#00ff88] focus:outline-none disabled:opacity-50"
+                />
+
+              </div>
+
+            </div>
+
+
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+
+              <div>
+
+                {
+                  securityMessage.text &&
+                  (
+
+                    <p className={`text-sm ${
+                      securityMessage.type ===
+                        'success'
+                        ? 'text-[#00ff88]'
+                        : 'text-red-400'
+                    }`}>
+                      {securityMessage.text}
+                    </p>
+
+                  )
+                }
+
+                {
+                  adminSecurity.updatedAt &&
+                  (
+
+                    <p className="text-gray-600 text-xs mt-1">
+                      Último cambio: {
+                        new Intl.DateTimeFormat(
+                          'es-MX',
+                          {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          }
+                        ).format(
+                          new Date(
+                            adminSecurity.updatedAt
+                          )
+                        )
+                      }
+                      {
+                        adminSecurity.updatedBy?.name
+                          ? ` · ${adminSecurity.updatedBy.name}`
+                          : ''
+                      }
+                    </p>
+
+                  )
+                }
+
+              </div>
+
+
+              <button
+                type="button"
+                disabled={
+                  !canManageSecurity ||
+                  securitySaving
+                }
+                onClick={
+                  handleSaveSecurityPassword
+                }
+                className="px-5 py-2.5 bg-[#00ff88] text-black rounded-xl font-bold hover:bg-[#00cc6a] disabled:opacity-40 flex items-center justify-center gap-2"
+              >
+
+                <Save
+                  size={17}
+                />
+
+                {
+                  securitySaving
+                    ? 'Guardando...'
+                    : adminSecurity.configured
+                      ? 'Cambiar contraseña'
+                      : 'Crear contraseña'
+                }
+
+              </button>
+
+            </div>
+
+          </div>
+
+
+          <div className="bg-[#111111] border border-[#1a1a1a] rounded-2xl overflow-hidden">
+
+            <div className="p-6 border-b border-[#1a1a1a]">
+
+              <h3 className="text-white font-black">
+                Acciones protegidas
+              </h3>
+
+              <p className="text-gray-500 text-sm mt-1">
+                Elige qué operaciones exigirán la contraseña administrativa antes de ejecutarse.
+              </p>
+
+            </div>
+
+
+            <div className="divide-y divide-[#1a1a1a]">
+
+              {
+                protectionItems.map(
+                  item => {
+
+                    const enabled =
+                      adminSecurity.protections?.[item.id] !==
+                      false;
+
+
+                    return (
+
+                      <div
+                        key={
+                          item.id
+                        }
+                        className="p-5 flex items-center justify-between gap-5"
+                      >
+
+                        <div>
+
+                          <p className="text-white font-semibold text-sm">
+                            {item.label}
+                          </p>
+
+                          <p className="text-gray-500 text-xs mt-1">
+                            {item.description}
+                          </p>
+
+                        </div>
+
+
+                        <button
+                          type="button"
+                          disabled={
+                            !canManageSecurity
+                          }
+                          onClick={() =>
+                            handleProtectionToggle(
+                              item.id
+                            )
+                          }
+                          className={`relative w-12 h-7 rounded-full transition-colors shrink-0 disabled:opacity-40 ${
+                            enabled
+                              ? 'bg-[#00ff88]'
+                              : 'bg-[#2a2a2a]'
+                          }`}
+                        >
+
+                          <span className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-transform ${
+                            enabled
+                              ? 'translate-x-6'
+                              : 'translate-x-1'
+                          }`}
+                          />
+
+                        </button>
+
+                      </div>
+
+                    );
+
+                  }
+                )
+              }
+
+            </div>
+
+          </div>
+
+
+          <div className="bg-[#111111] border border-[#1a1a1a] rounded-2xl overflow-hidden">
+
+            <div className="p-6 border-b border-[#1a1a1a] flex items-center justify-between gap-4">
+
+              <div>
+
+                <h3 className="text-white font-black">
+                  Historial de autorizaciones
+                </h3>
+
+                <p className="text-gray-500 text-sm mt-1">
+                  Últimos intentos y operaciones protegidas.
+                </p>
+
+              </div>
+
+
+              <span className="text-gray-500 text-xs">
+                {
+                  securityAudit.length
+                } eventos
+              </span>
+
+            </div>
+
+
+            {
+              securityAudit.length >
+                0
+                ? (
+
+                  <div className="divide-y divide-[#1a1a1a]">
+
+                    {
+                      securityAudit
+                        .slice(
+                          0,
+                          12
+                        )
+                        .map(
+                          event => {
+
+                            const successful =
+                              event.result ===
+                                'authorized' ||
+                              event.result ===
+                                'success';
+
+
+                            return (
+
+                              <div
+                                key={
+                                  event.id
+                                }
+                                className="p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                              >
+
+                                <div className="flex items-start gap-3">
+
+                                  <span className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${
+                                    successful
+                                      ? 'bg-[#00ff88]'
+                                      : 'bg-red-500'
+                                  }`}
+                                  />
+
+
+                                  <div>
+
+                                    <p className="text-white text-sm font-semibold">
+                                      {
+                                        ADMIN_SECURITY_ACTIONS[
+                                          event.action
+                                        ] ||
+                                        (
+                                          event.action ===
+                                            'security_password_updated'
+                                            ? 'Contraseña de seguridad actualizada'
+                                            : event.action ===
+                                                'security_protections_updated'
+                                              ? 'Protecciones actualizadas'
+                                              : event.action
+                                        )
+                                      }
+                                    </p>
+
+
+                                    <p className="text-gray-500 text-xs mt-1">
+                                      {
+                                        event.target?.label ||
+                                        event.target?.id ||
+                                        'Configuración del sistema'
+                                      }
+                                    </p>
+
+                                  </div>
+
+                                </div>
+
+
+                                <div className="md:text-right">
+
+                                  <p className={`text-xs font-bold ${
+                                    successful
+                                      ? 'text-[#00ff88]'
+                                      : 'text-red-400'
+                                  }`}>
+                                    {
+                                      event.result ===
+                                        'denied'
+                                        ? 'AUTORIZACIÓN RECHAZADA'
+                                        : 'AUTORIZADO'
+                                    }
+                                  </p>
+
+
+                                  <p className="text-gray-500 text-xs mt-1">
+                                    {
+                                      event.actor?.name ||
+                                      'Sistema'
+                                    }
+                                    {' · '}
+                                    {
+                                      new Intl.DateTimeFormat(
+                                        'es-MX',
+                                        {
+                                          day: '2-digit',
+                                          month: 'short',
+                                          hour: '2-digit',
+                                          minute: '2-digit'
+                                        }
+                                      ).format(
+                                        new Date(
+                                          event.createdAt
+                                        )
+                                      )
+                                    }
+                                  </p>
+
+                                </div>
+
+                              </div>
+
+                            );
+
+                          }
+                        )
+                    }
+
+                  </div>
+
+                )
+                : (
+
+                  <div className="p-8 text-center">
+
+                    <Shield
+                      size={32}
+                      className="text-gray-700 mx-auto"
+                    />
+
+                    <p className="text-gray-500 text-sm mt-2">
+                      Aún no existen eventos de autorización.
+                    </p>
+
+                  </div>
+
+                )
+            }
+
+          </div>
+
+
+          <div className="rounded-2xl bg-blue-500/5 border border-blue-500/20 p-5">
+
+            <p className="text-blue-400 font-bold text-sm">
+              Importante
+            </p>
+
+            <p className="text-gray-400 text-xs mt-1 leading-relaxed">
+              La contraseña se guarda como un derivado PBKDF2 con salt aleatorio; no se almacena en texto visible. Mientras el sistema funcione únicamente con localStorage, esta protección sirve para el control operativo de recepción, pero cuando GYM CONTROL migre a backend la validación deberá realizarse en el servidor.
+            </p>
+
+          </div>
+
+        </div>
+
+      );
+
+    };
+
+
+  // ======================================================
   // USUARIOS
   // ======================================================
 
@@ -6263,6 +7162,13 @@ const renderSuscripcionesTab =
               activeTab ===
                 'usuarios' &&
               renderUsuariosTab()
+            }
+
+
+            {
+              activeTab ===
+                'seguridad' &&
+              renderSeguridadTab()
             }
 
           </div>

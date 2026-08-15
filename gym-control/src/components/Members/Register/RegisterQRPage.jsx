@@ -55,7 +55,7 @@ import {
 
 import {
   addCredentialHistoryEvent
-} from '../../../utils/credentialHistory';
+} from '../../../services/credentialHistory';
 
 
 const PAYMENTS_KEY = 'gym_control_payments';

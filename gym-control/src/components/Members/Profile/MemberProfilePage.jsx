@@ -39,7 +39,12 @@ import {
 import Sidebar from '../../Layout/Sidebar';
 import Header from '../../Layout/Header';
 import { QRCodeSVG } from 'qrcode.react';
-import { getMemberById, saveMember } from '../../../utils/memberId';
+import {
+  generateUniquePin,
+  generateUniqueQRToken,
+  getMemberById,
+  saveMember
+} from '../../../utils/memberId';
 import WhatsAppButton from '../../WhatsApp/WhatsAppButton';
 import WhatsAppHistory from '../../WhatsApp/WhatsAppHistory';
 import { getSuggestedWhatsAppType } from '../../../services/whatsappService';
@@ -52,7 +57,10 @@ import {
   addCredentialHistoryEvent,
   getCredentialActionLabel,
   getCredentialHistoryByMember
-} from '../../../utils/credentialHistory';
+} from '../../../services/credentialHistory';
+
+import AdminAuthorizationModal
+  from '../../common/AdminAuthorizationModal';
 
 
 // ======================================================
@@ -381,6 +389,11 @@ const MemberProfilePage = () => {
   const [blockReason, setBlockReason] = useState('');
   const [deactivateReason, setDeactivateReason] = useState('');
 
+  const [
+    adminAction,
+    setAdminAction
+  ] = useState(null);
+
   const fullName = memberData
     ? `${memberData.firstName || ''} ${memberData.lastName || ''}`.trim() || 'Miembro'
     : 'Cargando miembro...';
@@ -479,6 +492,208 @@ const MemberProfilePage = () => {
       );
 
     };
+
+  // ======================================================
+  // ACCIONES SENSIBLES DE ACCESO
+  // ======================================================
+
+  const executeRegenerateQR =
+    async () => {
+
+      if (!memberData) {
+        return;
+      }
+
+
+      const newToken =
+        generateUniqueQRToken();
+
+
+      const updatedMember = {
+        ...memberData,
+
+        access: {
+          ...(memberData.access || {}),
+
+          qr: {
+            ...(memberData.access?.qr || {}),
+
+            enabled:
+              true,
+
+            configured:
+              true,
+
+            token:
+              newToken,
+
+            regeneratedAt:
+              new Date()
+                .toISOString()
+          }
+        },
+
+        updatedAt:
+          new Date()
+            .toISOString()
+      };
+
+
+      saveMember(
+        updatedMember
+      );
+
+      setMemberData(
+        updatedMember
+      );
+
+
+      registerCredentialEvent(
+        'qr_regenerated'
+      );
+
+
+      setAdminAction(
+        null
+      );
+
+
+      window.alert(
+        'Código QR regenerado correctamente. El código anterior dejó de ser válido.'
+      );
+
+    };
+
+
+  const executeRegeneratePIN =
+    async () => {
+
+      if (!memberData) {
+        return;
+      }
+
+
+      const result =
+        await generateUniquePin();
+
+
+      const updatedMember = {
+        ...memberData,
+
+        access: {
+          ...(memberData.access || {}),
+
+          pin: {
+            ...(memberData.access?.pin || {}),
+
+            enabled:
+              true,
+
+            configured:
+              true,
+
+            pinHash:
+              result.pinHash,
+
+            regeneratedAt:
+              new Date()
+                .toISOString()
+          }
+        },
+
+        updatedAt:
+          new Date()
+            .toISOString()
+      };
+
+
+      saveMember(
+        updatedMember
+      );
+
+      setMemberData(
+        updatedMember
+      );
+
+
+      registerCredentialEvent(
+        'pin_regenerated'
+      );
+
+
+      setAdminAction(
+        null
+      );
+
+
+      window.alert(
+        `PIN regenerado correctamente.\n\nNuevo PIN: ${result.pin}\n\nGuárdalo o entrégalo al miembro. El PIN anterior dejó de funcionar.`
+      );
+
+    };
+
+
+  const requestRegenerateQR =
+    () => {
+
+      setAdminAction({
+        action:
+          'regenerate_qr',
+
+        title:
+          'Regenerar código QR',
+
+        description:
+          'Se invalidará inmediatamente el código QR actual y se generará uno nuevo.',
+
+        confirmLabel:
+          'Regenerar QR',
+
+        target: {
+          id:
+            memberId,
+
+          label:
+            fullName
+        },
+
+        onAuthorized:
+          executeRegenerateQR
+      });
+
+    };
+
+
+  const requestRegeneratePIN =
+    () => {
+
+      setAdminAction({
+        action:
+          'regenerate_pin',
+
+        title:
+          'Regenerar PIN',
+
+        description:
+          'El PIN actual dejará de funcionar y el sistema generará un nuevo código personal.',
+
+        confirmLabel:
+          'Regenerar PIN',
+
+        target: {
+          id:
+            memberId,
+
+          label:
+            fullName
+        },
+
+        onAuthorized:
+          executeRegeneratePIN
+      });
+
+    };
+
 
   // Calcular días restantes
   // Conservamos la función original, pero ahora acepta todos los formatos
@@ -2442,6 +2657,40 @@ const MemberProfilePage = () => {
                           }
                         </p>
 
+
+                        {
+                          (
+                            method.id === 'qr' ||
+                            method.id === 'pin'
+                          ) &&
+                          configured &&
+                          (
+
+                            <button
+                              type="button"
+                              onClick={
+                                method.id === 'qr'
+                                  ? requestRegenerateQR
+                                  : requestRegeneratePIN
+                              }
+                              className="w-full mt-4 px-3 py-2 rounded-lg bg-[#0d0d0d] border border-[#2a2a2a] text-gray-300 text-xs font-semibold hover:text-[#00ff88] hover:border-[#00ff88]/40 transition-colors flex items-center justify-center gap-2"
+                            >
+
+                              <RefreshCw
+                                size={14}
+                              />
+
+                              {
+                                method.id === 'qr'
+                                  ? 'Regenerar QR'
+                                  : 'Regenerar PIN'
+                              }
+
+                            </button>
+
+                          )
+                        }
+
                       </div>
 
                     );
@@ -3338,12 +3587,7 @@ const MemberProfilePage = () => {
     window.alert('Acceso bloqueado correctamente');
   };
 
-  const handleDeactivateMember = () => {
-    if (!deactivateReason) {
-      window.alert('Debes seleccionar un motivo');
-      return;
-    }
-
+  const executeDeactivateMember = () => {
     if (!memberData) {
       return;
     }
@@ -3360,10 +3604,48 @@ const MemberProfilePage = () => {
     saveMember(updatedMember);
     setMemberData(updatedMember);
     setShowDeactivateModal(false);
+    setAdminAction(null);
     setDeactivateReason('');
 
     window.alert('Miembro dado de baja correctamente');
     navigate('/members');
+  };
+
+
+  const handleDeactivateMember = () => {
+    if (!deactivateReason) {
+      window.alert('Debes seleccionar un motivo');
+      return;
+    }
+
+    if (!memberData) {
+      return;
+    }
+
+    setAdminAction({
+      action:
+        'member_deactivate',
+
+      title:
+        'Autorizar baja del miembro',
+
+      description:
+        'Esta acción desactivará al miembro y bloqueará todos sus accesos. Se requiere la contraseña administrativa.',
+
+      confirmLabel:
+        'Autorizar baja',
+
+      target: {
+        id:
+          memberId,
+
+        label:
+          fullName
+      },
+
+      onAuthorized:
+        executeDeactivateMember
+    });
   };
 
   // ======================================================
@@ -3853,6 +4135,39 @@ const MemberProfilePage = () => {
           </div>
         </div>
       )}
+
+
+      <AdminAuthorizationModal
+        open={
+          Boolean(
+            adminAction
+          )
+        }
+        action={
+          adminAction?.action
+        }
+        title={
+          adminAction?.title
+        }
+        description={
+          adminAction?.description
+        }
+        confirmLabel={
+          adminAction?.confirmLabel
+        }
+        target={
+          adminAction?.target
+        }
+        onAuthorized={
+          adminAction?.onAuthorized
+        }
+        onClose={() =>
+          setAdminAction(
+            null
+          )
+        }
+      />
+
     </div>
   );
 };

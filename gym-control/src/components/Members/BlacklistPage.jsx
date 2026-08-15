@@ -29,6 +29,9 @@ import {
   getCurrentSession
 } from '../../services/authService';
 
+import AdminAuthorizationModal
+  from '../common/AdminAuthorizationModal';
+
 const formatDateTime = value => {
   if (!value) return '—';
   const date = new Date(value);
@@ -55,6 +58,11 @@ const BlacklistPage = () => {
   const [showReactivateModal, setShowReactivateModal] = useState(false);
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
+
+  const [
+    adminAction,
+    setAdminAction
+  ] = useState(null);
 
   const loadRecords = () => {
     setRecords(getBlacklist());
@@ -120,13 +128,8 @@ const BlacklistPage = () => {
       });
   }, [records, searchTerm, filter]);
 
-  const handleClear = () => {
+  const executeClear = () => {
     if (!selectedRecord) return;
-
-    if (!isOwnerOrAdmin) {
-      setError('Solo el dueño o un administrador puede retirar a una persona de la lista negra.');
-      return;
-    }
 
     try {
       clearBlacklistRecord({
@@ -136,6 +139,7 @@ const BlacklistPage = () => {
       });
 
       setShowClearModal(false);
+      setAdminAction(null);
       setSelectedRecord(null);
       setNote('');
       setError('');
@@ -145,13 +149,46 @@ const BlacklistPage = () => {
     }
   };
 
-  const handleReactivate = () => {
+
+  const handleClear = () => {
     if (!selectedRecord) return;
 
     if (!isOwnerOrAdmin) {
-      setError('Solo el dueño o un administrador puede reactivar una alerta de lista negra.');
+      setError('Solo el dueño o un administrador puede retirar a una persona de la lista negra.');
       return;
     }
+
+    setAdminAction({
+      action:
+        'blacklist_clear',
+
+      title:
+        'Quitar de lista negra',
+
+      description:
+        'La alerta dejará de estar activa. Esta acción requiere autorización administrativa.',
+
+      confirmLabel:
+        'Autorizar retiro',
+
+      target: {
+        id:
+          selectedRecord.previousMemberId ||
+          selectedRecord.id,
+
+        label:
+          selectedRecord.fullName ||
+          `${selectedRecord.firstName || ''} ${selectedRecord.lastName || ''}`.trim() ||
+          'Registro de lista negra'
+      },
+
+      onAuthorized:
+        executeClear
+    });
+  };
+
+  const executeReactivate = () => {
+    if (!selectedRecord) return;
 
     try {
       reactivateBlacklistRecord({
@@ -161,6 +198,7 @@ const BlacklistPage = () => {
       });
 
       setShowReactivateModal(false);
+      setAdminAction(null);
       setSelectedRecord(null);
       setNote('');
       setError('');
@@ -168,6 +206,44 @@ const BlacklistPage = () => {
     } catch (err) {
       setError(err?.message || 'No se pudo reactivar el registro.');
     }
+  };
+
+
+  const handleReactivate = () => {
+    if (!selectedRecord) return;
+
+    if (!isOwnerOrAdmin) {
+      setError('Solo el dueño o un administrador puede reactivar una alerta de lista negra.');
+      return;
+    }
+
+    setAdminAction({
+      action:
+        'blacklist_reactivate',
+
+      title:
+        'Reactivar alerta de lista negra',
+
+      description:
+        'El antecedente volverá a marcarse como alerta activa. Se requiere autorización administrativa.',
+
+      confirmLabel:
+        'Autorizar reactivación',
+
+      target: {
+        id:
+          selectedRecord.previousMemberId ||
+          selectedRecord.id,
+
+        label:
+          selectedRecord.fullName ||
+          `${selectedRecord.firstName || ''} ${selectedRecord.lastName || ''}`.trim() ||
+          'Registro de lista negra'
+      },
+
+      onAuthorized:
+        executeReactivate
+    });
   };
 
   return (
@@ -564,6 +640,37 @@ const BlacklistPage = () => {
           </div>
         </div>
       )}
+      <AdminAuthorizationModal
+        open={
+          Boolean(
+            adminAction
+          )
+        }
+        action={
+          adminAction?.action
+        }
+        title={
+          adminAction?.title
+        }
+        description={
+          adminAction?.description
+        }
+        confirmLabel={
+          adminAction?.confirmLabel
+        }
+        target={
+          adminAction?.target
+        }
+        onAuthorized={
+          adminAction?.onAuthorized
+        }
+        onClose={() =>
+          setAdminAction(
+            null
+          )
+        }
+      />
+
     </div>
   );
 };

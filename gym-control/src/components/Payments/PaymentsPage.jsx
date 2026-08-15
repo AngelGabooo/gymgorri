@@ -31,7 +31,8 @@ import {
   Upload,
   Printer,
   CheckCircle,
-  RefreshCw
+  RefreshCw,
+  Trash2
 } from 'lucide-react';
 
 import Sidebar from '../Layout/Sidebar';
@@ -58,6 +59,9 @@ import {
   getSales,
   getSalesSummary
 } from '../../services/salesService';
+
+import AdminAuthorizationModal
+  from '../common/AdminAuthorizationModal';
 
 
 // ======================================================
@@ -771,6 +775,12 @@ const PaymentsPage = () => {
   const [
     lastPayment,
     setLastPayment
+  ] = useState(null);
+
+
+  const [
+    adminAction,
+    setAdminAction
   ] = useState(null);
 
 
@@ -1788,6 +1798,126 @@ const PaymentsPage = () => {
       }
 
   };
+
+
+  // ======================================================
+  // ELIMINAR REGISTRO DE PAGO
+  // ======================================================
+
+  const executeDeletePayment =
+    payment => {
+
+      if (
+        !payment?.id
+      ) {
+        return;
+      }
+
+
+      const storedPayments =
+        readLocalArray(
+          PAYMENTS_KEY
+        );
+
+
+      const nextPayments =
+        storedPayments.filter(
+          item =>
+            item.id !==
+            payment.id
+        );
+
+
+      saveLocalArray(
+        PAYMENTS_KEY,
+        nextPayments
+      );
+
+
+      // También quitamos el movimiento del historial
+      // de suscripción que fue creado por ese pago.
+      // La suscripción ACTUAL del miembro no se revierte
+      // automáticamente para evitar modificar vigencias
+      // sin una operación administrativa específica.
+      const history =
+        readLocalArray(
+          SUBSCRIPTION_HISTORY_KEY
+        );
+
+
+      const nextHistory =
+        history.filter(
+          item =>
+            item.paymentId !==
+            payment.id
+        );
+
+
+      saveLocalArray(
+        SUBSCRIPTION_HISTORY_KEY,
+        nextHistory
+      );
+
+
+      setPayments(
+        nextPayments
+      );
+
+
+      setAdminAction(
+        null
+      );
+
+
+      window.alert(
+        'El registro de pago fue eliminado correctamente. La vigencia actual del miembro no fue modificada.'
+      );
+
+    };
+
+
+  const requestDeletePayment =
+    payment => {
+
+      if (
+        !payment?.id
+      ) {
+        return;
+      }
+
+
+      setAdminAction({
+        action:
+          'payment_delete',
+
+        title:
+          'Eliminar registro de pago',
+
+        description:
+          'El pago se eliminará del historial y también se retirará su movimiento asociado del historial de suscripción. La vigencia actual del miembro no cambiará automáticamente.',
+
+        confirmLabel:
+          'Eliminar pago',
+
+        target: {
+          id:
+            payment.id,
+
+          label:
+            `${payment.memberName || 'Miembro'} · $${Number(payment.amount || 0).toLocaleString('es-MX', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            })}`
+        },
+
+        onAuthorized:
+          () =>
+            executeDeletePayment(
+              payment
+            )
+      });
+
+    };
 
 
   // ======================================================
@@ -3529,21 +3659,44 @@ const PaymentsPage = () => {
 
                                   <td className="py-4 px-4">
 
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        navigate(
-                                          `/members/${payment.memberId}`
-                                        )
-                                      }
-                                      className="w-9 h-9 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg flex items-center justify-center text-gray-400 hover:text-[#00ff88] hover:border-[#00ff88]"
-                                    >
+                                    <div className="flex items-center gap-2">
 
-                                      <Eye
-                                        size={16}
-                                      />
+                                      <button
+                                        type="button"
+                                        title="Ver miembro"
+                                        onClick={() =>
+                                          navigate(
+                                            `/members/${payment.memberId}`
+                                          )
+                                        }
+                                        className="w-9 h-9 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg flex items-center justify-center text-gray-400 hover:text-[#00ff88] hover:border-[#00ff88]"
+                                      >
 
-                                    </button>
+                                        <Eye
+                                          size={16}
+                                        />
+
+                                      </button>
+
+
+                                      <button
+                                        type="button"
+                                        title="Eliminar pago"
+                                        onClick={() =>
+                                          requestDeletePayment(
+                                            payment
+                                          )
+                                        }
+                                        className="w-9 h-9 bg-red-500/5 border border-red-500/20 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-500/10 hover:border-red-500/40"
+                                      >
+
+                                        <Trash2
+                                          size={16}
+                                        />
+
+                                      </button>
+
+                                    </div>
 
                                   </td>
 
@@ -4989,6 +5142,38 @@ const PaymentsPage = () => {
         }
 
       `}</style>
+
+      <AdminAuthorizationModal
+        open={
+          Boolean(
+            adminAction
+          )
+        }
+        action={
+          adminAction?.action
+        }
+        title={
+          adminAction?.title
+        }
+        description={
+          adminAction?.description
+        }
+        confirmLabel={
+          adminAction?.confirmLabel
+        }
+        target={
+          adminAction?.target
+        }
+        onAuthorized={
+          adminAction?.onAuthorized
+        }
+        onClose={() =>
+          setAdminAction(
+            null
+          )
+        }
+      />
+
 
     </div>
 
