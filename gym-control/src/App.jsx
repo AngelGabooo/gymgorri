@@ -33,6 +33,7 @@ import AccessControlPage from './components/Access/AccessControlPage';
 import AttendancePage from './components/Attendance/AttendancePage';
 import VisitsPage from './components/Visits/VisitsPage';
 import PaymentsPage from './components/Payments/PaymentsPage';
+import CashPage from './components/Cash/CashPage';
 import ReportsPage from './components/Reports/ReportsPage';
 import SettingsPage from './components/Settings/SettingsPage';
 
@@ -418,6 +419,22 @@ function App() {
               permission="payments"
             >
               <PaymentsPage />
+            </ProtectedRoute>
+          }
+        />
+
+
+        {/* ================================================= */}
+        {/* CAJA */}
+        {/* ================================================= */}
+
+        <Route
+          path="/cash"
+          element={
+            <ProtectedRoute
+              permission="cash"
+            >
+              <CashPage />
             </ProtectedRoute>
           }
         />

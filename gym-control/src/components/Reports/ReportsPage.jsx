@@ -29,7 +29,13 @@ import {
   Zap,
   Sun,
   Moon,
-  AlertCircle
+  AlertCircle,
+  ShoppingCart,
+  WalletCards,
+  ShieldAlert,
+  Ban,
+  PackageSearch,
+  Receipt
 } from 'lucide-react';
 
 import Sidebar from '../Layout/Sidebar';
@@ -44,6 +50,11 @@ import {
   getSales
 } from '../../services/salesService';
 
+import {
+  getStoredVisits,
+  getVisitAttendance
+} from '../../utils/visitsStorage';
+
 
 // ======================================================
 // STORAGE
@@ -57,6 +68,21 @@ const PAYMENTS_KEY =
 
 const SUBSCRIPTION_HISTORY_KEY =
   'gym_control_subscription_history';
+
+const CASH_SHIFTS_KEY =
+  'gym_control_cash_shifts';
+
+const CASH_MOVEMENTS_KEY =
+  'gym_control_cash_movements';
+
+const ACCESS_LOGS_KEY =
+  'gym_control_access_logs';
+
+const BLACKLIST_KEY =
+  'gym_control_blacklist';
+
+const ADMIN_SECURITY_AUDIT_KEY =
+  'gym_control_admin_security_audit';
 
 
 // ======================================================
@@ -615,6 +641,47 @@ const ReportsPage = () => {
     setSubscriptionHistory
   ] = useState([]);
 
+  const [
+    sales,
+    setSales
+  ] = useState([]);
+
+  const [
+    registeredVisits,
+    setRegisteredVisits
+  ] = useState([]);
+
+
+  const [
+    visitAttendance,
+    setVisitAttendance
+  ] = useState([]);
+
+  const [
+    cashShifts,
+    setCashShifts
+  ] = useState([]);
+
+  const [
+    cashMovements,
+    setCashMovements
+  ] = useState([]);
+
+  const [
+    accessLogs,
+    setAccessLogs
+  ] = useState([]);
+
+  const [
+    blacklist,
+    setBlacklist
+  ] = useState([]);
+
+  const [
+    adminSecurityAudit,
+    setAdminSecurityAudit
+  ] = useState([]);
+
 
   // ======================================================
   // CARGAR DATOS
@@ -642,6 +709,49 @@ const ReportsPage = () => {
       setSubscriptionHistory(
         readLocalArray(
           SUBSCRIPTION_HISTORY_KEY
+        )
+      );
+
+      setSales(
+        getSales()
+      );
+
+      setRegisteredVisits(
+        getStoredVisits()
+      );
+
+
+      setVisitAttendance(
+        getVisitAttendance()
+      );
+
+      setCashShifts(
+        readLocalArray(
+          CASH_SHIFTS_KEY
+        )
+      );
+
+      setCashMovements(
+        readLocalArray(
+          CASH_MOVEMENTS_KEY
+        )
+      );
+
+      setAccessLogs(
+        readLocalArray(
+          ACCESS_LOGS_KEY
+        )
+      );
+
+      setBlacklist(
+        readLocalArray(
+          BLACKLIST_KEY
+        )
+      );
+
+      setAdminSecurityAudit(
+        readLocalArray(
+          ADMIN_SECURITY_AUDIT_KEY
         )
       );
 
@@ -756,7 +866,7 @@ const ReportsPage = () => {
     useMemo(
       () => {
 
-        return getSales()
+        return sales
           .filter(
             sale =>
               sale.status !==
@@ -770,7 +880,7 @@ const ReportsPage = () => {
       },
       [
         range,
-        payments
+        sales
       ]
     );
 
@@ -805,26 +915,467 @@ const ReportsPage = () => {
     );
 
 
+  const renewalEvents =
+    useMemo(
+      () => {
+
+        const map =
+          new Map();
+
+
+        subscriptionHistory
+          .filter(
+            item =>
+              item.type ===
+              'renewal'
+          )
+          .forEach(
+            item => {
+
+              const key =
+                `${item.memberId || 'member'}-${item.createdAt || item.date || item.id}`;
+
+
+              map.set(
+                key,
+                {
+                  ...item,
+                  source:
+                    'subscription_history'
+                }
+              );
+
+            }
+          );
+
+
+        payments
+          .filter(
+            item =>
+              item.type ===
+                'subscription_renewal' ||
+              String(
+                item.concept ||
+                ''
+              )
+                .toLowerCase()
+                .includes(
+                  'renovación'
+                ) ||
+              String(
+                item.concept ||
+                ''
+              )
+                .toLowerCase()
+                .includes(
+                  'renovacion'
+                )
+          )
+          .forEach(
+            item => {
+
+              const key =
+                `${item.memberId || 'member'}-${item.createdAt || item.date || item.id}`;
+
+
+              if (
+                !map.has(
+                  key
+                )
+              ) {
+
+                map.set(
+                  key,
+                  {
+                    ...item,
+                    source:
+                      'payments'
+                  }
+                );
+
+              }
+
+            }
+          );
+
+
+        return Array.from(
+          map.values()
+        );
+
+      },
+      [
+        subscriptionHistory,
+        payments
+      ]
+    );
+
+
   const periodRenewals =
     useMemo(
       () => {
 
-        return subscriptionHistory.filter(
+        return renewalEvents.filter(
           item =>
-            item.type ===
-              'renewal' &&
             isInPeriod(
-              item.createdAt,
+              item.createdAt ||
+              item.date,
               range
             )
         );
 
       },
       [
-        subscriptionHistory,
+        renewalEvents,
         range
       ]
     );
+
+
+  // ======================================================
+  // VISITAS
+  // ======================================================
+
+  const periodVisitAttendance =
+    useMemo(
+      () =>
+        visitAttendance.filter(
+          item =>
+            isInPeriod(
+              item.entryAt ||
+              item.createdAt,
+              range
+            )
+        ),
+      [
+        visitAttendance,
+        range
+      ]
+    );
+
+
+  const periodRegisteredVisits =
+    useMemo(
+      () =>
+        registeredVisits.filter(
+          visit =>
+            isInPeriod(
+              visit.createdAt ||
+              visit.registeredAt ||
+              visit.date ||
+              visit.startDate,
+              range
+            )
+        ),
+      [
+        registeredVisits,
+        range
+      ]
+    );
+
+
+  // ======================================================
+  // CAJA
+  // ======================================================
+
+  const periodCashShifts =
+    cashShifts.filter(
+      shift =>
+        isInPeriod(
+          shift.closedAt ||
+          shift.openedAt,
+          range
+        )
+    );
+
+
+  const closedCashShifts =
+    periodCashShifts.filter(
+      shift =>
+        shift.status ===
+        'closed'
+    );
+
+
+  const openCashShifts =
+    cashShifts.filter(
+      shift =>
+        shift.status ===
+        'open'
+    );
+
+
+  const periodCashMovements =
+    cashMovements.filter(
+      item =>
+        isInPeriod(
+          item.createdAt,
+          range
+        )
+    );
+
+
+  const getCashMovementTotal =
+    type =>
+      periodCashMovements
+        .filter(
+          item =>
+            item.type ===
+            type
+        )
+        .reduce(
+          (
+            total,
+            item
+          ) =>
+            total +
+            Number(
+              item.amount ||
+              0
+            ),
+          0
+        );
+
+
+  const cashExpenses =
+    getCashMovementTotal(
+      'expense'
+    );
+
+
+  const cashWithdrawals =
+    getCashMovementTotal(
+      'withdrawal'
+    );
+
+
+  const cashOtherIncome =
+    getCashMovementTotal(
+      'other_income'
+    );
+
+
+  const cashDifferenceTotal =
+    closedCashShifts.reduce(
+      (
+        total,
+        shift
+      ) =>
+        total +
+        Number(
+          shift.difference ||
+          0
+        ),
+      0
+    );
+
+
+  const cashExpectedTotal =
+    closedCashShifts.reduce(
+      (
+        total,
+        shift
+      ) =>
+        total +
+        Number(
+          shift.expectedCash ||
+          shift.closeSnapshot?.expectedCash ||
+          0
+        ),
+      0
+    );
+
+
+  const cashCountedTotal =
+    closedCashShifts.reduce(
+      (
+        total,
+        shift
+      ) =>
+        total +
+        Number(
+          shift.countedCash ||
+          0
+        ),
+      0
+    );
+
+
+  // ======================================================
+  // SEGURIDAD
+  // ======================================================
+
+  const periodAccessLogs =
+    accessLogs.filter(
+      item =>
+        isInPeriod(
+          item.createdAt,
+          range
+        )
+    );
+
+
+  const allowedAccesses =
+    periodAccessLogs.filter(
+      item =>
+        item.result ===
+        'allowed'
+    );
+
+
+  const deniedAccesses =
+    periodAccessLogs.filter(
+      item =>
+        item.result ===
+        'denied'
+    );
+
+
+  const faceMismatchAttempts =
+    deniedAccesses.filter(
+      item =>
+        item.reason ===
+        'FACE_MISMATCH'
+    );
+
+
+  const activeBlacklist =
+    blacklist.filter(
+      item =>
+        item.active !==
+        false
+    );
+
+
+  const periodAdminAudit =
+    adminSecurityAudit.filter(
+      item =>
+        isInPeriod(
+          item.createdAt,
+          range
+        )
+    );
+
+
+  const deniedAdminActions =
+    periodAdminAudit.filter(
+      item =>
+        item.result ===
+        'denied'
+    );
+
+
+  // ======================================================
+  // VENTAS
+  // ======================================================
+
+  const productUnitsSold =
+    periodProductSales.reduce(
+      (
+        total,
+        sale
+      ) =>
+        total +
+        Number(
+          sale.itemCount ||
+          0
+        ),
+      0
+    );
+
+
+  const averageSaleTicket =
+    periodProductSales.length >
+    0
+      ? productSalesIncome /
+        periodProductSales.length
+      : 0;
+
+
+  const productSalesMap = {};
+
+
+  periodProductSales.forEach(
+    sale => {
+
+      (
+        Array.isArray(
+          sale.items
+        )
+          ? sale.items
+          : []
+      ).forEach(
+        item => {
+
+          const key =
+            item.productId ||
+            item.name ||
+            'producto';
+
+
+          if (
+            !productSalesMap[
+              key
+            ]
+          ) {
+
+            productSalesMap[
+              key
+            ] = {
+              name:
+                item.name ||
+                'Producto',
+
+              quantity:
+                0,
+
+              revenue:
+                0
+            };
+
+          }
+
+
+          productSalesMap[
+            key
+          ].quantity +=
+            Number(
+              item.quantity ||
+              0
+            );
+
+
+          productSalesMap[
+            key
+          ].revenue +=
+            Number(
+              item.subtotal ||
+              0
+            );
+
+        }
+      );
+
+    }
+  );
+
+
+  const topProducts =
+    Object.values(
+      productSalesMap
+    )
+      .sort(
+        (
+          a,
+          b
+        ) =>
+          b.quantity -
+          a.quantity
+      )
+      .slice(
+        0,
+        8
+      );
 
 
   // ======================================================
@@ -897,6 +1448,12 @@ const ReportsPage = () => {
     );
 
 
+  const businessIncome =
+    totalIncome +
+    productSalesIncome +
+    cashOtherIncome;
+
+
   const activeMembers =
     subscriptionStats.active +
     subscriptionStats.expiring;
@@ -913,19 +1470,16 @@ const ReportsPage = () => {
       uniqueMemberIds.size,
 
     visits:
-      periodAttendance.filter(
-        item =>
-          item.type ===
-            'visit' ||
-          item.method ===
-            'visit'
-      ).length,
+      periodRegisteredVisits.length,
+
+    visitAccesses:
+      periodVisitAttendance.length,
 
     renewals:
       periodRenewals.length,
 
     income:
-      totalIncome
+      businessIncome
 
   };
 
@@ -1986,7 +2540,7 @@ const ReportsPage = () => {
 
 
   const incomeDailyAverage =
-    totalIncome /
+    businessIncome /
     periodDays;
 
 
@@ -2031,8 +2585,60 @@ const ReportsPage = () => {
           stats.renewals
         ],
         [
-          'Ingresos',
+          'Ingresos globales',
           stats.income
+        ],
+        [
+          'Ingresos membresías',
+          totalIncome
+        ],
+        [
+          'Venta de productos',
+          productSalesIncome
+        ],
+        [
+          'Ganancia productos',
+          productSalesProfit
+        ],
+        [
+          'Productos vendidos',
+          productUnitsSold
+        ],
+        [
+          'Pases de visita registrados',
+          periodRegisteredVisits.length
+        ],
+        [
+          'Accesos de visita',
+          periodVisitAttendance.length
+        ],
+        [
+          'Turnos cerrados',
+          closedCashShifts.length
+        ],
+        [
+          'Gastos de caja',
+          cashExpenses
+        ],
+        [
+          'Retiros de caja',
+          cashWithdrawals
+        ],
+        [
+          'Diferencia de caja',
+          cashDifferenceTotal
+        ],
+        [
+          'Accesos bloqueados',
+          deniedAccesses.length
+        ],
+        [
+          'Rostros no coincidentes',
+          faceMismatchAttempts.length
+        ],
+        [
+          'Lista negra activa',
+          activeBlacklist.length
         ],
         [
           'Dentro ahora',
@@ -2140,6 +2746,24 @@ const ReportsPage = () => {
     },
     {
       id:
+        'ventas',
+      label:
+        'Ventas'
+    },
+    {
+      id:
+        'caja',
+      label:
+        'Caja'
+    },
+    {
+      id:
+        'seguridad',
+      label:
+        'Seguridad'
+    },
+    {
+      id:
         'miembros',
       label:
         'Miembros'
@@ -2205,11 +2829,11 @@ const ReportsPage = () => {
           />
 
           <ReportStatCard
-            title="Visitas"
+            title="Pases de visita"
             value={
               stats.visits
             }
-            subtitle="Pases de visita"
+            subtitle={`${stats.visitAccesses} accesos registrados`}
             icon={
               Calendar
             }
@@ -2239,6 +2863,78 @@ const ReportsPage = () => {
             }
             color="green"
           />
+
+        </div>
+
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+          <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6">
+
+            <h3 className="text-white font-bold mb-4">
+              Visitas del periodo
+            </h3>
+
+            <div className="grid grid-cols-2 gap-4">
+
+              <div className="bg-[#1a1a1a] rounded-xl p-4">
+
+                <p className="text-gray-400 text-sm">
+                  Pases registrados
+                </p>
+
+                <p className="text-white text-2xl font-black mt-1">
+                  {periodRegisteredVisits.length}
+                </p>
+
+              </div>
+
+
+              <div className="bg-[#1a1a1a] rounded-xl p-4">
+
+                <p className="text-gray-400 text-sm">
+                  Accesos de visita
+                </p>
+
+                <p className="text-[#00ff88] text-2xl font-black mt-1">
+                  {periodVisitAttendance.length}
+                </p>
+
+              </div>
+
+            </div>
+
+          </div>
+
+
+          <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6">
+
+            <h3 className="text-white font-bold mb-4">
+              Renovaciones del periodo
+            </h3>
+
+            <div className="flex items-end justify-between gap-4">
+
+              <div>
+
+                <p className="text-gray-400 text-sm">
+                  Renovaciones confirmadas
+                </p>
+
+                <p className="text-[#00ff88] text-3xl font-black mt-1">
+                  {periodRenewals.length}
+                </p>
+
+              </div>
+
+              <TrendingUp
+                size={34}
+                className="text-[#00ff88]"
+              />
+
+            </div>
+
+          </div>
 
         </div>
 
@@ -2903,6 +3599,68 @@ const ReportsPage = () => {
 
             </div>
 
+
+            {
+              periodRenewals.length >
+              0 &&
+              (
+
+                <div className="mt-4 border-t border-[#1a1a1a] pt-4 space-y-2 max-h-64 overflow-y-auto">
+
+                  {
+                    periodRenewals
+                      .slice(
+                        0,
+                        8
+                      )
+                      .map(
+                        renewal => (
+
+                          <div
+                            key={
+                              renewal.id ||
+                              `${renewal.memberId}-${renewal.createdAt || renewal.date}`
+                            }
+                            className="flex items-center justify-between gap-4 p-3 bg-[#1a1a1a] rounded-xl"
+                          >
+
+                            <div className="min-w-0">
+
+                              <p className="text-white text-sm font-medium truncate">
+                                {
+                                  renewal.memberName ||
+                                  renewal.memberId ||
+                                  'Miembro'
+                                }
+                              </p>
+
+                              <p className="text-gray-500 text-xs mt-1">
+                                {
+                                  renewal.subscription?.planLabel ||
+                                  renewal.planLabel ||
+                                  renewal.plan ||
+                                  'Renovación'
+                                }
+                              </p>
+
+                            </div>
+
+
+                            <span className="text-[#00ff88] text-xs font-bold shrink-0">
+                              RENOVADA
+                            </span>
+
+                          </div>
+
+                        )
+                      )
+                  }
+
+                </div>
+
+              )
+            }
+
           </div>
 
 
@@ -2989,10 +3747,11 @@ const ReportsPage = () => {
           />
 
           <ReportStatCard
-            title="Ingresos totales"
+            title="Ingresos globales"
             value={`${formatMoney(
-              totalIncome
+              businessIncome
             )} MXN`}
+            subtitle="Membresías + ventas + otros"
             icon={
               DollarSign
             }
@@ -3200,6 +3959,636 @@ const ReportsPage = () => {
 
               }
             )}
+
+          </div>
+
+        </div>
+
+      </div>
+
+    );
+
+
+  // ======================================================
+  // VENTAS
+  // ======================================================
+
+  const renderVentasTab =
+    () => (
+
+      <div className="space-y-6">
+
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+
+          <ReportStatCard
+            title="Ventas"
+            value={
+              periodProductSales.length
+            }
+            subtitle="Operaciones completadas"
+            icon={
+              ShoppingCart
+            }
+            color="green"
+          />
+
+          <ReportStatCard
+            title="Ingresos"
+            value={`${formatMoney(
+              productSalesIncome
+            )} MXN`}
+            icon={
+              DollarSign
+            }
+            color="green"
+          />
+
+          <ReportStatCard
+            title="Productos vendidos"
+            value={
+              productUnitsSold
+            }
+            subtitle="Unidades"
+            icon={
+              PackageSearch
+            }
+            color="blue"
+          />
+
+          <ReportStatCard
+            title="Ticket promedio"
+            value={`${formatMoney(
+              averageSaleTicket
+            )} MXN`}
+            icon={
+              Receipt
+            }
+            color="gray"
+          />
+
+          <ReportStatCard
+            title="Ganancia estimada"
+            value={`${formatMoney(
+              productSalesProfit
+            )} MXN`}
+            icon={
+              TrendingUp
+            }
+            color="blue"
+          />
+
+        </div>
+
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+          <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl p-6">
+
+            <h3 className="text-white font-bold mb-4">
+              Productos más vendidos
+            </h3>
+
+
+            {
+              topProducts.length ===
+              0
+                ? (
+
+                  <div className="py-10 text-center text-gray-500">
+                    Sin ventas de productos.
+                  </div>
+
+                )
+                : (
+
+                  <div className="space-y-3">
+
+                    {
+                      topProducts.map(
+                        (
+                          product,
+                          index
+                        ) => (
+
+                          <div
+                            key={
+                              `${product.name}-${index}`
+                            }
+                            className="p-3 rounded-xl bg-[#1a1a1a] flex items-center justify-between gap-4"
+                          >
+
+                            <div>
+
+                              <p className="text-white text-sm font-semibold">
+                                #{index + 1} {product.name}
+                              </p>
+
+                              <p className="text-gray-600 text-xs mt-1">
+                                {formatMoney(product.revenue)} generados
+                              </p>
+
+                            </div>
+
+
+                            <span className="text-[#00ff88] font-bold">
+                              {product.quantity} uds.
+                            </span>
+
+                          </div>
+
+                        )
+                      )
+                    }
+
+                  </div>
+
+                )
+            }
+
+          </div>
+
+
+          <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl overflow-hidden">
+
+            <div className="p-5 border-b border-[#1a1a1a]">
+
+              <h3 className="text-white font-bold">
+                Últimas ventas
+              </h3>
+
+            </div>
+
+
+            <div className="divide-y divide-[#1a1a1a]">
+
+              {
+                periodProductSales
+                  .slice(
+                    0,
+                    10
+                  )
+                  .map(
+                    sale => (
+
+                      <div
+                        key={
+                          sale.id
+                        }
+                        className="p-4 flex items-center justify-between gap-4"
+                      >
+
+                        <div className="min-w-0">
+
+                          <p className="text-white text-sm font-semibold">
+                            {sale.folio || sale.id}
+                          </p>
+
+                          <p className="text-gray-500 text-xs mt-1 truncate">
+                            {
+                              Array.isArray(
+                                sale.items
+                              )
+                                ? sale.items
+                                    .map(
+                                      item =>
+                                        `${item.name} x${item.quantity}`
+                                    )
+                                    .join(', ')
+                                : 'Sin detalle'
+                            }
+                          </p>
+
+                        </div>
+
+
+                        <div className="text-right shrink-0">
+
+                          <p className="text-[#00ff88] font-bold">
+                            {formatMoney(sale.total)}
+                          </p>
+
+                          <p className="text-gray-600 text-xs capitalize">
+                            {sale.paymentMethod || 'otro'}
+                          </p>
+
+                        </div>
+
+                      </div>
+
+                    )
+                  )
+              }
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    );
+
+
+  // ======================================================
+  // CAJA
+  // ======================================================
+
+  const renderCajaTab =
+    () => (
+
+      <div className="space-y-6">
+
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+
+          <ReportStatCard
+            title="Turnos cerrados"
+            value={
+              closedCashShifts.length
+            }
+            icon={
+              WalletCards
+            }
+            color="green"
+          />
+
+          <ReportStatCard
+            title="Turnos abiertos"
+            value={
+              openCashShifts.length
+            }
+            icon={
+              Clock
+            }
+            color="yellow"
+          />
+
+          <ReportStatCard
+            title="Gastos"
+            value={`${formatMoney(
+              cashExpenses
+            )} MXN`}
+            icon={
+              DollarSign
+            }
+            color="red"
+          />
+
+          <ReportStatCard
+            title="Retiros"
+            value={`${formatMoney(
+              cashWithdrawals
+            )} MXN`}
+            icon={
+              DollarSign
+            }
+            color="red"
+          />
+
+          <ReportStatCard
+            title="Contado"
+            value={`${formatMoney(
+              cashCountedTotal
+            )} MXN`}
+            subtitle={`Esperado ${formatMoney(cashExpectedTotal)}`}
+            icon={
+              Banknote
+            }
+            color="green"
+          />
+
+          <ReportStatCard
+            title="Diferencia"
+            value={`${formatMoney(
+              cashDifferenceTotal
+            )} MXN`}
+            icon={
+              AlertCircle
+            }
+            color={
+              Math.abs(
+                cashDifferenceTotal
+              ) <
+              0.01
+                ? 'green'
+                : 'red'
+            }
+          />
+
+        </div>
+
+
+        <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl overflow-hidden">
+
+          <div className="p-5 border-b border-[#1a1a1a]">
+
+            <h3 className="text-white font-bold">
+              Cierres por empleado
+            </h3>
+
+          </div>
+
+
+          <div className="overflow-x-auto">
+
+            <table className="w-full min-w-[850px]">
+
+              <thead className="bg-[#0d0d0d]">
+
+                <tr>
+                  <th className="p-4 text-left text-gray-500 text-xs">Empleado</th>
+                  <th className="p-4 text-left text-gray-500 text-xs">Apertura</th>
+                  <th className="p-4 text-left text-gray-500 text-xs">Cierre</th>
+                  <th className="p-4 text-right text-gray-500 text-xs">Manejado</th>
+                  <th className="p-4 text-right text-gray-500 text-xs">Esperado</th>
+                  <th className="p-4 text-right text-gray-500 text-xs">Contado</th>
+                  <th className="p-4 text-right text-gray-500 text-xs">Diferencia</th>
+                </tr>
+
+              </thead>
+
+
+              <tbody>
+
+                {
+                  closedCashShifts.map(
+                    shift => (
+
+                      <tr
+                        key={
+                          shift.id
+                        }
+                        className="border-t border-[#1a1a1a]"
+                      >
+
+                        <td className="p-4 text-white text-sm">
+                          {shift.employee?.name || 'Usuario'}
+                        </td>
+
+                        <td className="p-4 text-gray-400 text-sm">
+                          {parseGymDate(shift.openedAt)?.toLocaleString('es-MX') || '—'}
+                        </td>
+
+                        <td className="p-4 text-gray-400 text-sm">
+                          {parseGymDate(shift.closedAt)?.toLocaleString('es-MX') || '—'}
+                        </td>
+
+                        <td className="p-4 text-right text-gray-300 text-sm">
+                          {formatMoney(shift.closeSnapshot?.totalHandled || 0)}
+                        </td>
+
+                        <td className="p-4 text-right text-gray-300 text-sm">
+                          {formatMoney(shift.expectedCash || 0)}
+                        </td>
+
+                        <td className="p-4 text-right text-gray-300 text-sm">
+                          {formatMoney(shift.countedCash || 0)}
+                        </td>
+
+                        <td className={`p-4 text-right font-bold text-sm ${
+                          Math.abs(
+                            Number(
+                              shift.difference ||
+                              0
+                            )
+                          ) <
+                          0.01
+                            ? 'text-[#00ff88]'
+                            : 'text-red-400'
+                        }`}>
+                          {formatMoney(shift.difference || 0)}
+                        </td>
+
+                      </tr>
+
+                    )
+                  )
+                }
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    );
+
+
+  // ======================================================
+  // SEGURIDAD
+  // ======================================================
+
+  const renderSeguridadTab =
+    () => (
+
+      <div className="space-y-6">
+
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+
+          <ReportStatCard
+            title="Permitidos"
+            value={
+              allowedAccesses.length
+            }
+            subtitle="Accesos verificados"
+            icon={
+              UserCheck
+            }
+            color="green"
+          />
+
+          <ReportStatCard
+            title="Bloqueados"
+            value={
+              deniedAccesses.length
+            }
+            icon={
+              ShieldAlert
+            }
+            color="red"
+          />
+
+          <ReportStatCard
+            title="Rostro no coincide"
+            value={
+              faceMismatchAttempts.length
+            }
+            icon={
+              ShieldAlert
+            }
+            color="yellow"
+          />
+
+          <ReportStatCard
+            title="Lista negra activa"
+            value={
+              activeBlacklist.length
+            }
+            icon={
+              Ban
+            }
+            color="red"
+          />
+
+          <ReportStatCard
+            title="Acciones protegidas"
+            value={
+              periodAdminAudit.length
+            }
+            icon={
+              ShieldAlert
+            }
+            color="gray"
+          />
+
+          <ReportStatCard
+            title="Autorización rechazada"
+            value={
+              deniedAdminActions.length
+            }
+            icon={
+              AlertCircle
+            }
+            color="yellow"
+          />
+
+        </div>
+
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+          <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl overflow-hidden">
+
+            <div className="p-5 border-b border-[#1a1a1a]">
+              <h3 className="text-white font-bold">
+                Incidentes de acceso
+              </h3>
+            </div>
+
+
+            <div className="divide-y divide-[#1a1a1a]">
+
+              {
+                deniedAccesses
+                  .slice(
+                    0,
+                    12
+                  )
+                  .map(
+                    item => (
+
+                      <div
+                        key={
+                          item.id
+                        }
+                        className="p-4 flex items-center justify-between gap-4"
+                      >
+
+                        <div>
+                          <p className="text-white text-sm font-semibold">
+                            {item.memberName || item.memberId || 'Acceso'}
+                          </p>
+                          <p className="text-gray-500 text-xs mt-1">
+                            {item.reason || 'Acceso rechazado'} · {item.method || '—'}
+                          </p>
+                        </div>
+
+                        <span className="text-red-400 text-xs font-bold">
+                          BLOQUEADO
+                        </span>
+
+                      </div>
+
+                    )
+                  )
+              }
+
+              {
+                deniedAccesses.length ===
+                0 &&
+                (
+                  <div className="py-10 text-center text-gray-500">
+                    Sin incidentes registrados.
+                  </div>
+                )
+              }
+
+            </div>
+
+          </div>
+
+
+          <div className="bg-[#111111] border border-[#1a1a1a] rounded-xl overflow-hidden">
+
+            <div className="p-5 border-b border-[#1a1a1a]">
+              <h3 className="text-white font-bold">
+                Auditoría administrativa
+              </h3>
+            </div>
+
+
+            <div className="divide-y divide-[#1a1a1a]">
+
+              {
+                periodAdminAudit
+                  .slice(
+                    0,
+                    12
+                  )
+                  .map(
+                    item => (
+
+                      <div
+                        key={
+                          item.id
+                        }
+                        className="p-4 flex items-center justify-between gap-4"
+                      >
+
+                        <div>
+                          <p className="text-white text-sm font-semibold">
+                            {item.action || 'Acción administrativa'}
+                          </p>
+                          <p className="text-gray-500 text-xs mt-1">
+                            {item.actor?.name || 'Sistema'}
+                          </p>
+                        </div>
+
+                        <span className={`text-xs font-bold ${
+                          item.result ===
+                            'denied'
+                            ? 'text-red-400'
+                            : 'text-[#00ff88]'
+                        }`}>
+                          {
+                            item.result ===
+                              'denied'
+                              ? 'RECHAZADO'
+                              : 'AUTORIZADO'
+                          }
+                        </span>
+
+                      </div>
+
+                    )
+                  )
+              }
+
+              {
+                periodAdminAudit.length ===
+                0 &&
+                (
+                  <div className="py-10 text-center text-gray-500">
+                    Sin eventos administrativos.
+                  </div>
+                )
+              }
+
+            </div>
 
           </div>
 
@@ -3433,6 +4822,15 @@ const ReportsPage = () => {
         case 'ingresos':
           return renderIngresosTab();
 
+        case 'ventas':
+          return renderVentasTab();
+
+        case 'caja':
+          return renderCajaTab();
+
+        case 'seguridad':
+          return renderSeguridadTab();
+
         case 'miembros':
           return renderMiembrosTab();
 
@@ -3473,7 +4871,7 @@ const ReportsPage = () => {
 
 
               <p className="text-gray-400">
-                Analiza el rendimiento, asistencia, suscripciones e ingresos del gimnasio.
+                Analiza miembros, asistencias, suscripciones, ingresos, ventas, caja y seguridad del gimnasio.
               </p>
 
             </div>

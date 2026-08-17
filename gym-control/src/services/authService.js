@@ -115,6 +115,12 @@ export const PERMISSION_OPTIONS = [
   },
 
   {
+    id: 'cash',
+    label: 'Caja',
+    description: 'Abrir y cerrar turnos, registrar gastos, retiros y consultar cortes de caja.'
+  },
+
+  {
     id: 'reports',
     label: 'Reportes',
     description: 'Consultar estadísticas y reportes.'
@@ -1063,6 +1069,15 @@ export const getFirstAllowedRoute =
 
         path:
           '/visits'
+      },
+
+
+      {
+        permission:
+          'cash',
+
+        path:
+          '/cash'
       },
 
 

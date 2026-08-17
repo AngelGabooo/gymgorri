@@ -24,6 +24,7 @@ import {
   ShoppingCart,
   PackageSearch,
   History,
+  WalletCards,
   Settings,
   LogOut,
   Menu,
@@ -213,6 +214,13 @@ const Sidebar = ({
       icon: DollarSign,
       path: '/payments',
       permission: 'payments'
+    },
+
+    {
+      name: 'Caja',
+      icon: WalletCards,
+      path: '/cash',
+      permission: 'cash'
     },
 
     {

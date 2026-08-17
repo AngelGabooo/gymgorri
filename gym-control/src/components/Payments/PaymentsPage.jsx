@@ -63,6 +63,14 @@ import {
 import AdminAuthorizationModal
   from '../common/AdminAuthorizationModal';
 
+import {
+  getCurrentSession
+} from '../../services/authService';
+
+import {
+  getOpenCashShiftForCurrentUser
+} from '../../services/cashService';
+
 
 // ======================================================
 // STORAGE
@@ -680,6 +688,9 @@ const PaymentsPage = () => {
 
   const navigate =
     useNavigate();
+
+  const currentSession =
+    getCurrentSession();
 
 
   const {
@@ -1423,6 +1434,41 @@ const PaymentsPage = () => {
 
       try {
 
+        const numericPaymentAmount =
+          Number(
+            paymentForm.amount ||
+            0
+          );
+
+
+        const openCashShift =
+          numericPaymentAmount >
+            0
+            ? getOpenCashShiftForCurrentUser()
+            : null;
+
+
+        if (
+          numericPaymentAmount >
+            0 &&
+          !openCashShift
+        ) {
+
+          setShowConfirmModal(
+            false
+          );
+
+          setErrors({});
+
+          window.alert(
+            'Debes abrir tu turno de caja antes de registrar un cobro.'
+          );
+
+          return;
+
+        }
+
+
         const now =
           new Date()
             .toISOString();
@@ -1573,6 +1619,37 @@ const PaymentsPage = () => {
             createId(
               'PAY'
             ),
+
+          cashShiftId:
+            openCashShift?.id ||
+            null,
+
+          cashEmployeeId:
+            openCashShift?.employee?.id ||
+            currentSession?.id ||
+            null,
+
+          createdBy:
+            currentSession
+              ? {
+                  id:
+                    currentSession.id ||
+                    null,
+
+                  name:
+                    currentSession.name ||
+                    currentSession.email ||
+                    'Usuario',
+
+                  email:
+                    currentSession.email ||
+                    '',
+
+                  role:
+                    currentSession.role ||
+                    ''
+                }
+              : null,
 
           memberId:
             selectedMember.id,
