@@ -21,9 +21,12 @@ const SESSION_KEY =
 const AUTH_KEY =
   'isAuthenticated';
 
+const NEXGYM_GYMS_KEY =
+  'nexgym_gyms';
+
 
 // ======================================================
-// PERMISOS DEL SISTEMA
+// PERMISOS
 // ======================================================
 
 export const PERMISSION_OPTIONS = [
@@ -31,31 +34,36 @@ export const PERMISSION_OPTIONS = [
   {
     id: 'dashboard',
     label: 'Dashboard',
-    description: 'Resumen general del gimnasio.'
+    description:
+      'Resumen general del gimnasio.'
   },
 
   {
     id: 'members',
     label: 'Miembros',
-    description: 'Consultar, registrar y administrar miembros.'
+    description:
+      'Consultar, registrar y administrar miembros.'
   },
 
   {
     id: 'subscriptions',
     label: 'Suscripciones',
-    description: 'Consultar y renovar suscripciones.'
+    description:
+      'Consultar y renovar suscripciones.'
   },
 
   {
     id: 'access',
     label: 'Control de acceso',
-    description: 'Utilizar QR, PIN y reconocimiento facial.'
+    description:
+      'Utilizar QR, PIN y reconocimiento facial.'
   },
 
   {
     id: 'attendance',
     label: 'Asistencias',
-    description: 'Consultar entradas, salidas y permanencia.'
+    description:
+      'Consultar entradas, salidas y permanencia.'
   },
 
   {
@@ -68,68 +76,78 @@ export const PERMISSION_OPTIONS = [
   {
     id: 'visits',
     label: 'Visitas',
-    description: 'Registrar y consultar visitantes.'
+    description:
+      'Registrar y consultar visitantes.'
   },
-
 
   {
     id: 'sales',
     label: 'Realizar ventas',
-    description: 'Cobrar productos desde el punto de venta.'
+    description:
+      'Cobrar productos desde el punto de venta.'
   },
 
   {
     id: 'sales_history',
     label: 'Historial de ventas',
-    description: 'Consultar ventas realizadas, productos vendidos y detalles de cobro.'
+    description:
+      'Consultar ventas realizadas.'
   },
 
   {
     id: 'products',
     label: 'Productos',
-    description: 'Consultar el catálogo, precios y existencias de productos.'
+    description:
+      'Consultar catálogo, precios y existencias.'
   },
 
   {
     id: 'inventory',
     label: 'Administrar inventario',
-    description: 'Crear y editar productos, registrar entradas, salidas y modificar existencias.'
+    description:
+      'Crear y editar productos y existencias.'
   },
 
   {
     id: 'inventory_history',
     label: 'Historial de inventario',
-    description: 'Consultar entradas, salidas, ventas, devoluciones y ajustes de inventario.'
+    description:
+      'Consultar movimientos de inventario.'
   },
 
   {
     id: 'product_analytics',
     label: 'Rendimiento de productos',
-    description: 'Consultar costos, ganancias, margen, rotación y productos más vendidos.'
+    description:
+      'Consultar rendimiento y ganancias de productos.'
   },
 
   {
     id: 'payments',
     label: 'Pagos',
-    description: 'Consultar pagos e ingresos.'
+    description:
+      'Consultar pagos e ingresos.'
   },
 
   {
     id: 'cash',
     label: 'Caja',
-    description: 'Abrir y cerrar turnos, registrar gastos, retiros y consultar cortes de caja.'
+    description:
+      'Administrar caja, gastos y retiros.'
   },
 
   {
     id: 'reports',
     label: 'Reportes',
-    description: 'Consultar estadísticas y reportes.'
+    description:
+      'Consultar estadísticas y reportes.'
   },
 
   {
     id: 'settings',
     label: 'Configuración',
-    description: 'Modificar configuración general y usuarios.'
+    description:
+      'Modificar configuración general y usuarios.'
   }
 
 ];
@@ -195,21 +213,10 @@ export const normalizePermissions = (
   permissions
 ) => {
 
+  // Dueño y administrador tienen acceso completo.
   if (
-    role ===
-    'owner'
-  ) {
-
-    return [
-      ...ALL_PERMISSIONS
-    ];
-
-  }
-
-
-  if (
-    role ===
-    'admin'
+    role === 'owner' ||
+    role === 'admin'
   ) {
 
     return [
@@ -242,7 +249,268 @@ export const normalizePermissions = (
 
 
 // ======================================================
+// OBTENER GIMNASIO NEXGYM
+// ======================================================
+
+const getNexgymGymById = (
+  gymId
+) => {
+
+  if (!gymId) {
+
+    return null;
+
+  }
+
+
+  try {
+
+    const parsed =
+      JSON.parse(
+        localStorage.getItem(
+          NEXGYM_GYMS_KEY
+        ) ||
+        '[]'
+      );
+
+
+    if (
+      !Array.isArray(
+        parsed
+      )
+    ) {
+
+      return null;
+
+    }
+
+
+    return (
+      parsed.find(
+        gym =>
+          gym.id ===
+          gymId
+      ) ||
+      null
+    );
+
+  } catch (error) {
+
+    console.error(
+      'Error leyendo gimnasio NEXGYM:',
+      error
+    );
+
+
+    return null;
+
+  }
+
+};
+
+
+// ======================================================
+// OBTENER ESTADO ACTUAL DEL GIMNASIO
+// ======================================================
+
+const getGymServiceStatus = (
+  user
+) => {
+
+  if (
+    !user?.gymId
+  ) {
+
+    return (
+      user?.gymStatus ||
+      null
+    );
+
+  }
+
+
+  const gym =
+    getNexgymGymById(
+      user.gymId
+    );
+
+
+  return (
+    gym?.subscription?.status ||
+    user.gymStatus ||
+    null
+  );
+
+};
+
+
+// ======================================================
+// ACTUALIZAR ÚLTIMA CONEXIÓN DEL GIMNASIO
+// ======================================================
+
+const updateNexgymLastConnection = (
+  gymId,
+  date
+) => {
+
+  if (!gymId) {
+
+    return;
+
+  }
+
+
+  try {
+
+    const gyms =
+      JSON.parse(
+        localStorage.getItem(
+          NEXGYM_GYMS_KEY
+        ) ||
+        '[]'
+      );
+
+
+    if (
+      !Array.isArray(
+        gyms
+      )
+    ) {
+
+      return;
+
+    }
+
+
+    const updatedGyms =
+      gyms.map(
+        gym => {
+
+          if (
+            gym.id !==
+            gymId
+          ) {
+
+            return gym;
+
+          }
+
+
+          return {
+
+            ...gym,
+
+            lastConnectionAt:
+              date,
+
+            access: {
+
+              ...(gym.access || {}),
+
+              lastLoginAt:
+                date
+
+            },
+
+            updatedAt:
+              date
+
+          };
+
+        }
+      );
+
+
+    localStorage.setItem(
+      NEXGYM_GYMS_KEY,
+      JSON.stringify(
+        updatedGyms
+      )
+    );
+
+
+    window.dispatchEvent(
+      new Event(
+        'nexgym-gyms-update'
+      )
+    );
+
+  } catch (error) {
+
+    console.error(
+      'No se pudo actualizar la conexión del gimnasio:',
+      error
+    );
+
+  }
+
+};
+
+
+// ======================================================
+// SINCRONIZAR DATOS DEL GIMNASIO EN UN USUARIO
+// ======================================================
+
+const normalizeUserGymData = (
+  user
+) => {
+
+  if (
+    !user?.gymId
+  ) {
+
+    return user;
+
+  }
+
+
+  const gym =
+    getNexgymGymById(
+      user.gymId
+    );
+
+
+  if (!gym) {
+
+    return user;
+
+  }
+
+
+  return {
+
+    ...user,
+
+    gymCode:
+      gym.gymCode ||
+      user.gymCode ||
+      null,
+
+    gymName:
+      gym.name ||
+      user.gymName ||
+      null,
+
+    gymStatus:
+      gym.subscription?.status ||
+      user.gymStatus ||
+      null
+
+  };
+
+};
+
+
+// ======================================================
 // ASEGURAR USUARIO PRINCIPAL
+// ======================================================
+//
+// Esta cuenta únicamente se crea para mantener
+// compatibilidad con instalaciones anteriores.
+//
+// Los gimnasios creados desde NEXGYM tendrán su propio
+// usuario owner con gymId.
+//
 // ======================================================
 
 export const ensureDefaultOwnerUser =
@@ -253,7 +521,7 @@ export const ensureDefaultOwnerUser =
 
 
     // ==================================================
-    // SI YA EXISTEN USUARIOS
+    // YA EXISTEN USUARIOS
     // ==================================================
 
     if (
@@ -268,32 +536,26 @@ export const ensureDefaultOwnerUser =
         false;
 
 
-      const normalizedUsers =
+      const normalized =
         users.map(
           (
-            user,
+            originalUser,
             index
           ) => {
 
-            let role =
-              user.role;
+            let user =
+              normalizeUserGymData(
+                originalUser
+              );
 
 
-            // ============================================
-            // COMPATIBILIDAD CON USUARIOS ANTIGUOS
-            // ============================================
-
-            if (!role) {
-
-              role =
+            const role =
+              user.role ||
+              (
                 index === 0
                   ? 'owner'
-                  : 'reception';
-
-              changed =
-                true;
-
-            }
+                  : 'reception'
+              );
 
 
             const permissions =
@@ -304,13 +566,23 @@ export const ensureDefaultOwnerUser =
 
 
             if (
+              !user.role ||
               !Array.isArray(
                 user.permissions
-              )
+              ) ||
+              user.role !==
+                role ||
+              JSON.stringify(
+                user.permissions
+              ) !==
+              JSON.stringify(
+                permissions
+              ) ||
+              user !==
+                originalUser
             ) {
 
-              changed =
-                true;
+              changed = true;
 
             }
 
@@ -333,24 +605,22 @@ export const ensureDefaultOwnerUser =
         );
 
 
-      if (
-        changed
-      ) {
+      if (changed) {
 
         saveGymUsers(
-          normalizedUsers
+          normalized
         );
 
       }
 
 
-      return normalizedUsers;
+      return normalized;
 
     }
 
 
     // ==================================================
-    // CREAR DUEÑO INICIAL
+    // CUENTA LEGACY
     // ==================================================
 
     const now =
@@ -369,6 +639,18 @@ export const ensureDefaultOwnerUser =
       id:
         createGymUserId(),
 
+      gymId:
+        null,
+
+      gymCode:
+        null,
+
+      gymName:
+        null,
+
+      gymStatus:
+        null,
+
       name:
         'Administrador Principal',
 
@@ -386,6 +668,9 @@ export const ensureDefaultOwnerUser =
 
       status:
         'active',
+
+      mustChangePassword:
+        false,
 
       createdAt:
         now,
@@ -415,7 +700,7 @@ export const ensureDefaultOwnerUser =
 
 
 // ======================================================
-// INICIAR SESIÓN
+// AUTENTICAR
 // ======================================================
 
 export const authenticateGymUser =
@@ -426,17 +711,12 @@ export const authenticateGymUser =
 
     try {
 
-      // ==================================================
-      // ASEGURAR USUARIO PRINCIPAL
-      // ==================================================
-
       await ensureDefaultOwnerUser();
 
 
       const normalizedEmail =
         String(
-          email ||
-          ''
+          email || ''
         )
           .trim()
           .toLowerCase();
@@ -444,14 +724,9 @@ export const authenticateGymUser =
 
       const normalizedPassword =
         String(
-          password ||
-          ''
+          password || ''
         );
 
-
-      // ==================================================
-      // VALIDAR CAMPOS
-      // ==================================================
 
       if (
         !normalizedEmail ||
@@ -460,8 +735,7 @@ export const authenticateGymUser =
 
         return {
 
-          success:
-            false,
+          success: false,
 
           code:
             'EMPTY_FIELDS',
@@ -478,16 +752,11 @@ export const authenticateGymUser =
         getGymUsers();
 
 
-      // ==================================================
-      // BUSCAR USUARIO
-      // ==================================================
-
-      const user =
-        users.find(
+      const userIndex =
+        users.findIndex(
           item =>
             String(
-              item.email ||
-              ''
+              item.email || ''
             )
               .trim()
               .toLowerCase() ===
@@ -495,16 +764,14 @@ export const authenticateGymUser =
         );
 
 
-      // ==================================================
-      // USUARIO NO EXISTE
-      // ==================================================
-
-      if (!user) {
+      if (
+        userIndex ===
+        -1
+      ) {
 
         return {
 
-          success:
-            false,
+          success: false,
 
           code:
             'USER_NOT_FOUND',
@@ -515,6 +782,18 @@ export const authenticateGymUser =
         };
 
       }
+
+
+      const originalUser =
+        users[
+          userIndex
+        ];
+
+
+      const user =
+        normalizeUserGymData(
+          originalUser
+        );
 
 
       // ==================================================
@@ -528,8 +807,7 @@ export const authenticateGymUser =
 
         return {
 
-          success:
-            false,
+          success: false,
 
           code:
             'USER_INACTIVE',
@@ -543,7 +821,37 @@ export const authenticateGymUser =
 
 
       // ==================================================
-      // VALIDAR CONTRASEÑA
+      // ESTADO DEL SERVICIO NEXGYM
+      // ==================================================
+
+      const gymStatus =
+        getGymServiceStatus(
+          user
+        );
+
+
+      if (
+        gymStatus ===
+        'suspended'
+      ) {
+
+        return {
+
+          success: false,
+
+          code:
+            'GYM_SUSPENDED',
+
+          message:
+            'El servicio NEXGYM de este gimnasio se encuentra suspendido.'
+
+        };
+
+      }
+
+
+      // ==================================================
+      // PASSWORD
       // ==================================================
 
       const passwordHash =
@@ -559,8 +867,7 @@ export const authenticateGymUser =
 
         return {
 
-          success:
-            false,
+          success: false,
 
           code:
             'INVALID_PASSWORD',
@@ -572,10 +879,6 @@ export const authenticateGymUser =
 
       }
 
-
-      // ==================================================
-      // CREAR SESIÓN
-      // ==================================================
 
       const now =
         new Date()
@@ -594,10 +897,26 @@ export const authenticateGymUser =
         );
 
 
+      // ==================================================
+      // SESIÓN
+      // ==================================================
+
       const session = {
 
         id:
           user.id,
+
+        gymId:
+          user.gymId ||
+          null,
+
+        gymCode:
+          user.gymCode ||
+          null,
+
+        gymName:
+          user.gymName ||
+          null,
 
         name:
           user.name,
@@ -609,6 +928,13 @@ export const authenticateGymUser =
 
         permissions,
 
+        gymStatus,
+
+        mustChangePassword:
+          Boolean(
+            user.mustChangePassword
+          ),
+
         loginAt:
           now
 
@@ -616,40 +942,38 @@ export const authenticateGymUser =
 
 
       // ==================================================
-      // ACTUALIZAR ÚLTIMO ACCESO
+      // ACTUALIZAR USUARIO
       // ==================================================
+
+      const updatedUser = {
+
+        ...user,
+
+        role,
+
+        permissions,
+
+        gymStatus,
+
+        lastAccessAt:
+          now,
+
+        updatedAt:
+          now
+
+      };
+
 
       const updatedUsers =
         users.map(
-          item => {
-
-            if (
-              item.id !==
-              user.id
-            ) {
-
-              return item;
-
-            }
-
-
-            return {
-
-              ...item,
-
-              role,
-
-              permissions,
-
-              lastAccessAt:
-                now,
-
-              updatedAt:
-                now
-
-            };
-
-          }
+          (
+            item,
+            index
+          ) =>
+            index ===
+            userIndex
+              ? updatedUser
+              : item
         );
 
 
@@ -659,7 +983,7 @@ export const authenticateGymUser =
 
 
       // ==================================================
-      // GUARDAR AUTENTICACIÓN
+      // GUARDAR SESIÓN
       // ==================================================
 
       localStorage.setItem(
@@ -674,6 +998,22 @@ export const authenticateGymUser =
           session
         )
       );
+
+
+      // ==================================================
+      // ACTUALIZAR CONEXIÓN
+      // ==================================================
+
+      if (
+        user.gymId
+      ) {
+
+        updateNexgymLastConnection(
+          user.gymId,
+          now
+        );
+
+      }
 
 
       window.dispatchEvent(
@@ -692,21 +1032,10 @@ export const authenticateGymUser =
 
       return {
 
-        success:
-          true,
+        success: true,
 
-        user: {
-
-          ...user,
-
-          role,
-
-          permissions,
-
-          lastAccessAt:
-            now
-
-        },
+        user:
+          updatedUser,
 
         session
 
@@ -722,8 +1051,7 @@ export const authenticateGymUser =
 
       return {
 
-        success:
-          false,
+        success: false,
 
         code:
           'LOGIN_ERROR',
@@ -739,7 +1067,40 @@ export const authenticateGymUser =
 
 
 // ======================================================
-// OBTENER SESIÓN ACTUAL
+// CERRAR SESIÓN
+// ======================================================
+
+export const logoutGymUser =
+  () => {
+
+    localStorage.removeItem(
+      AUTH_KEY
+    );
+
+
+    localStorage.removeItem(
+      SESSION_KEY
+    );
+
+
+    window.dispatchEvent(
+      new Event(
+        'gym-auth-update'
+      )
+    );
+
+
+    window.dispatchEvent(
+      new Event(
+        'gym-storage-update'
+      )
+    );
+
+  };
+
+
+// ======================================================
+// OBTENER SESIÓN
 // ======================================================
 
 export const getCurrentSession =
@@ -778,14 +1139,14 @@ export const getCurrentSession =
       }
 
 
-      const session =
+      const storedSession =
         JSON.parse(
           rawSession
         );
 
 
       if (
-        !session?.id
+        !storedSession?.id
       ) {
 
         logoutGymUser();
@@ -795,23 +1156,21 @@ export const getCurrentSession =
       }
 
 
-      // ==================================================
-      // COMPROBAR QUE SIGA EXISTIENDO
-      // ==================================================
-
       const users =
         getGymUsers();
 
 
-      const user =
+      const originalUser =
         users.find(
           item =>
             item.id ===
-            session.id
+            storedSession.id
         );
 
 
-      if (!user) {
+      if (
+        !originalUser
+      ) {
 
         logoutGymUser();
 
@@ -820,9 +1179,11 @@ export const getCurrentSession =
       }
 
 
-      // ==================================================
-      // COMPROBAR QUE SIGA ACTIVO
-      // ==================================================
+      const user =
+        normalizeUserGymData(
+          originalUser
+        );
+
 
       if (
         user.status !==
@@ -836,9 +1197,27 @@ export const getCurrentSession =
       }
 
 
+      const gymStatus =
+        getGymServiceStatus(
+          user
+        );
+
+
+      if (
+        gymStatus ===
+        'suspended'
+      ) {
+
+        logoutGymUser();
+
+        return null;
+
+      }
+
+
       const role =
         user.role ||
-        session.role ||
+        storedSession.role ||
         'reception';
 
 
@@ -846,30 +1225,55 @@ export const getCurrentSession =
         normalizePermissions(
           role,
           user.permissions ||
-          session.permissions
+          storedSession.permissions
         );
 
 
-      return {
+      const session = {
 
-        ...session,
+        ...storedSession,
 
         id:
           user.id,
 
+        gymId:
+          user.gymId ||
+          storedSession.gymId ||
+          null,
+
+        gymCode:
+          user.gymCode ||
+          storedSession.gymCode ||
+          null,
+
+        gymName:
+          user.gymName ||
+          storedSession.gymName ||
+          null,
+
         name:
           user.name ||
-          session.name,
+          storedSession.name,
 
         email:
           user.email ||
-          session.email,
+          storedSession.email,
 
         role,
 
-        permissions
+        permissions,
+
+        gymStatus,
+
+        mustChangePassword:
+          Boolean(
+            user.mustChangePassword
+          )
 
       };
+
+
+      return session;
 
     } catch (error) {
 
@@ -901,7 +1305,7 @@ export const isAuthenticated =
 
 
 // ======================================================
-// COMPROBAR PERMISO
+// PUEDE ACCEDER
 // ======================================================
 
 export const canAccess =
@@ -922,44 +1326,26 @@ export const canAccess =
       getCurrentSession();
 
 
-    if (!session) {
+    if (
+      !session
+    ) {
 
       return false;
 
     }
 
 
-    // ==================================================
-    // DUEÑO
-    // ==================================================
-
     if (
       session.role ===
-      'owner'
+        'owner' ||
+      session.role ===
+        'admin'
     ) {
 
       return true;
 
     }
 
-
-    // ==================================================
-    // ADMINISTRADOR
-    // ==================================================
-
-    if (
-      session.role ===
-      'admin'
-    ) {
-
-      return true;
-
-    }
-
-
-    // ==================================================
-    // ENCARGADO / RECEPCIÓN
-    // ==================================================
 
     return (
       Array.isArray(
@@ -974,7 +1360,7 @@ export const canAccess =
 
 
 // ======================================================
-// OBTENER PRIMERA RUTA PERMITIDA
+// PRIMERA RUTA PERMITIDA
 // ======================================================
 
 export const getFirstAllowedRoute =
@@ -987,7 +1373,9 @@ export const getFirstAllowedRoute =
       getCurrentSession();
 
 
-    if (!session) {
+    if (
+      !session
+    ) {
 
       return '/login';
 
@@ -996,9 +1384,9 @@ export const getFirstAllowedRoute =
 
     if (
       session.role ===
-      'owner' ||
+        'owner' ||
       session.role ===
-      'admin'
+        'admin'
     ) {
 
       return '/dashboard';
@@ -1016,147 +1404,97 @@ export const getFirstAllowedRoute =
     const routes = [
 
       {
-        permission:
-          'dashboard',
-
-        path:
-          '/dashboard'
+        permission: 'dashboard',
+        path: '/dashboard'
       },
 
       {
-        permission:
-          'access',
-
-        path:
-          '/access'
+        permission: 'access',
+        path: '/access'
       },
 
       {
-        permission:
-          'members',
-
-        path:
-          '/members'
+        permission: 'members',
+        path: '/members'
       },
 
       {
-        permission:
-          'subscriptions',
-
-        path:
-          '/subscriptions'
+        permission: 'subscriptions',
+        path: '/subscriptions'
       },
 
       {
-        permission:
-          'attendance',
-
-        path:
-          '/attendance'
+        permission: 'attendance',
+        path: '/attendance'
       },
 
       {
-        permission:
-          'retention',
-
-        path:
-          '/retention'
+        permission: 'retention',
+        path: '/retention'
       },
 
       {
-        permission:
-          'visits',
-
-        path:
-          '/visits'
-      },
-
-
-      {
-        permission:
-          'cash',
-
-        path:
-          '/cash'
-      },
-
-
-      {
-        permission:
-          'sales',
-
-        path:
-          '/sales'
+        permission: 'visits',
+        path: '/visits'
       },
 
       {
-        permission:
-          'sales_history',
-
-        path:
-          '/sales/history'
+        permission: 'cash',
+        path: '/cash'
       },
 
       {
-        permission:
-          'products',
-
-        path:
-          '/sales/products'
+        permission: 'sales',
+        path: '/sales'
       },
 
       {
-        permission:
-          'payments',
-
-        path:
-          '/payments'
+        permission: 'sales_history',
+        path: '/sales/history'
       },
 
       {
-        permission:
-          'reports',
-
-        path:
-          '/reports'
+        permission: 'products',
+        path: '/sales/products'
       },
 
       {
-        permission:
-          'settings',
+        permission: 'payments',
+        path: '/payments'
+      },
 
-        path:
-          '/settings'
+      {
+        permission: 'reports',
+        path: '/reports'
+      },
+
+      {
+        permission: 'settings',
+        path: '/settings'
       }
 
     ];
 
 
-    const availableRoute =
+    const route =
       routes.find(
-        route =>
+        item =>
           permissions.includes(
-            route.permission
+            item.permission
           )
       );
 
 
-    if (
-      availableRoute
-    ) {
-
-      return availableRoute.path;
-
-    }
-
-
-    return '/login';
+    return (
+      route?.path ||
+      '/login'
+    );
 
   };
 
 
 // ======================================================
-// OBTENER USUARIO ACTUAL COMPLETO
+// USUARIO ACTUAL
 // ======================================================
 
 export const getCurrentUser =
@@ -1166,41 +1504,9 @@ export const getCurrentUser =
       getCurrentSession();
 
 
-    if (!session) {
-
-      return null;
-
-    }
-
-
-    const users =
-      getGymUsers();
-
-
-    return (
-      users.find(
-        user =>
-          user.id ===
-          session.id
-      ) ||
-      null
-    );
-
-  };
-
-
-// ======================================================
-// REFRESCAR SESIÓN ACTUAL
-// ======================================================
-
-export const refreshCurrentSession =
-  () => {
-
-    const session =
-      getCurrentSession();
-
-
-    if (!session) {
+    if (
+      !session
+    ) {
 
       return null;
 
@@ -1219,72 +1525,249 @@ export const refreshCurrentSession =
       );
 
 
-    if (!user) {
-
-      logoutGymUser();
-
-      return null;
-
-    }
-
-
     if (
-      user.status !==
-      'active'
+      !user
     ) {
 
-      logoutGymUser();
-
       return null;
 
     }
 
 
-    const role =
-      user.role ||
-      'reception';
+    return normalizeUserGymData(
+      user
+    );
+
+  };
 
 
-    const permissions =
-      normalizePermissions(
+// ======================================================
+// REFRESCAR SESIÓN
+// ======================================================
+
+export const refreshCurrentSession =
+  () => {
+
+    try {
+
+      const authenticated =
+        localStorage.getItem(
+          AUTH_KEY
+        );
+
+
+      if (
+        authenticated !==
+        'true'
+      ) {
+
+        return null;
+
+      }
+
+
+      const rawSession =
+        localStorage.getItem(
+          SESSION_KEY
+        );
+
+
+      if (
+        !rawSession
+      ) {
+
+        return null;
+
+      }
+
+
+      const current =
+        JSON.parse(
+          rawSession
+        );
+
+
+      if (
+        !current?.id
+      ) {
+
+        logoutGymUser();
+
+        return null;
+
+      }
+
+
+      const users =
+        getGymUsers();
+
+
+      const userIndex =
+        users.findIndex(
+          item =>
+            item.id ===
+            current.id
+        );
+
+
+      if (
+        userIndex ===
+        -1
+      ) {
+
+        logoutGymUser();
+
+        return null;
+
+      }
+
+
+      const originalUser =
+        users[
+          userIndex
+        ];
+
+
+      const user =
+        normalizeUserGymData(
+          originalUser
+        );
+
+
+      const gymStatus =
+        getGymServiceStatus(
+          user
+        );
+
+
+      if (
+        user.status !==
+          'active' ||
+        gymStatus ===
+          'suspended'
+      ) {
+
+        logoutGymUser();
+
+        return null;
+
+      }
+
+
+      const role =
+        user.role ||
+        'reception';
+
+
+      const permissions =
+        normalizePermissions(
+          role,
+          user.permissions
+        );
+
+
+      const updatedSession = {
+
+        ...current,
+
+        id:
+          user.id,
+
+        gymId:
+          user.gymId ||
+          null,
+
+        gymCode:
+          user.gymCode ||
+          null,
+
+        gymName:
+          user.gymName ||
+          null,
+
+        name:
+          user.name,
+
+        email:
+          user.email,
+
         role,
-        user.permissions
+
+        permissions,
+
+        gymStatus,
+
+        mustChangePassword:
+          Boolean(
+            user.mustChangePassword
+          )
+
+      };
+
+
+      // ==================================================
+      // SINCRONIZAR USUARIO
+      // ==================================================
+
+      const updatedUser = {
+
+        ...user,
+
+        role,
+
+        permissions,
+
+        gymStatus
+
+      };
+
+
+      const updatedUsers =
+        users.map(
+          (
+            item,
+            index
+          ) =>
+            index ===
+            userIndex
+              ? updatedUser
+              : item
+        );
+
+
+      saveGymUsers(
+        updatedUsers
       );
 
 
-    const updatedSession = {
-
-      ...session,
-
-      name:
-        user.name,
-
-      email:
-        user.email,
-
-      role,
-
-      permissions
-
-    };
+      localStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify(
+          updatedSession
+        )
+      );
 
 
-    localStorage.setItem(
-      SESSION_KEY,
-      JSON.stringify(
-        updatedSession
-      )
-    );
+      window.dispatchEvent(
+        new Event(
+          'gym-auth-update'
+        )
+      );
 
 
-    window.dispatchEvent(
-      new Event(
-        'gym-auth-update'
-      )
-    );
+      return updatedSession;
+
+    } catch (error) {
+
+      console.error(
+        'Error refrescando sesión:',
+        error
+      );
 
 
-    return updatedSession;
+      return null;
+
+    }
 
   };
 
@@ -1301,20 +1784,17 @@ export const changeCurrentUserPassword =
 
     try {
 
-      // ==================================================
-      // OBTENER SESIÓN
-      // ==================================================
-
       const session =
         getCurrentSession();
 
 
-      if (!session) {
+      if (
+        !session
+      ) {
 
         return {
 
-          success:
-            false,
+          success: false,
 
           code:
             'NO_SESSION',
@@ -1327,27 +1807,17 @@ export const changeCurrentUserPassword =
       }
 
 
-      // ==================================================
-      // NORMALIZAR CONTRASEÑAS
-      // ==================================================
-
       const current =
         String(
-          currentPassword ||
-          ''
+          currentPassword || ''
         );
 
 
       const next =
         String(
-          newPassword ||
-          ''
+          newPassword || ''
         );
 
-
-      // ==================================================
-      // CAMPOS VACÍOS
-      // ==================================================
 
       if (
         !current ||
@@ -1356,8 +1826,7 @@ export const changeCurrentUserPassword =
 
         return {
 
-          success:
-            false,
+          success: false,
 
           code:
             'EMPTY_FIELDS',
@@ -1370,10 +1839,6 @@ export const changeCurrentUserPassword =
       }
 
 
-      // ==================================================
-      // LONGITUD MÍNIMA
-      // ==================================================
-
       if (
         next.length <
         8
@@ -1381,8 +1846,7 @@ export const changeCurrentUserPassword =
 
         return {
 
-          success:
-            false,
+          success: false,
 
           code:
             'PASSWORD_TOO_SHORT',
@@ -1395,10 +1859,6 @@ export const changeCurrentUserPassword =
       }
 
 
-      // ==================================================
-      // NO PERMITIR LA MISMA CONTRASEÑA
-      // ==================================================
-
       if (
         current ===
         next
@@ -1406,8 +1866,7 @@ export const changeCurrentUserPassword =
 
         return {
 
-          success:
-            false,
+          success: false,
 
           code:
             'SAME_PASSWORD',
@@ -1419,10 +1878,6 @@ export const changeCurrentUserPassword =
 
       }
 
-
-      // ==================================================
-      // BUSCAR USUARIO
-      // ==================================================
 
       const users =
         getGymUsers();
@@ -1443,29 +1898,24 @@ export const changeCurrentUserPassword =
 
         return {
 
-          success:
-            false,
+          success: false,
 
           code:
             'USER_NOT_FOUND',
 
           message:
-            'No se encontró el usuario de la sesión actual.'
+            'No se encontró el usuario.'
 
         };
 
       }
 
 
-      const currentUser =
+      const user =
         users[
           userIndex
         ];
 
-
-      // ==================================================
-      // VALIDAR CONTRASEÑA ACTUAL
-      // ==================================================
 
       const currentHash =
         await hashValue(
@@ -1475,13 +1925,12 @@ export const changeCurrentUserPassword =
 
       if (
         currentHash !==
-        currentUser.passwordHash
+        user.passwordHash
       ) {
 
         return {
 
-          success:
-            false,
+          success: false,
 
           code:
             'INVALID_CURRENT_PASSWORD',
@@ -1494,40 +1943,11 @@ export const changeCurrentUserPassword =
       }
 
 
-      // ==================================================
-      // GENERAR NUEVO HASH
-      // ==================================================
-
       const newHash =
         await hashValue(
           next
         );
 
-
-      if (
-        newHash ===
-        currentUser.passwordHash
-      ) {
-
-        return {
-
-          success:
-            false,
-
-          code:
-            'SAME_PASSWORD',
-
-          message:
-            'La nueva contraseña debe ser diferente a la actual.'
-
-        };
-
-      }
-
-
-      // ==================================================
-      // ACTUALIZAR USUARIO
-      // ==================================================
 
       const now =
         new Date()
@@ -1536,10 +1956,13 @@ export const changeCurrentUserPassword =
 
       const updatedUser = {
 
-        ...currentUser,
+        ...user,
 
         passwordHash:
           newHash,
+
+        mustChangePassword:
+          false,
 
         passwordUpdatedAt:
           now,
@@ -1553,13 +1976,13 @@ export const changeCurrentUserPassword =
       const updatedUsers =
         users.map(
           (
-            user,
+            item,
             index
           ) =>
             index ===
             userIndex
               ? updatedUser
-              : user
+              : item
         );
 
 
@@ -1568,16 +1991,8 @@ export const changeCurrentUserPassword =
       );
 
 
-      // ==================================================
-      // REFRESCAR SESIÓN
-      // ==================================================
-
       refreshCurrentSession();
 
-
-      // ==================================================
-      // NOTIFICAR CAMBIOS
-      // ==================================================
 
       window.dispatchEvent(
         new Event(
@@ -1595,8 +2010,7 @@ export const changeCurrentUserPassword =
 
       return {
 
-        success:
-          true,
+        success: true,
 
         code:
           'PASSWORD_UPDATED',
@@ -1616,8 +2030,7 @@ export const changeCurrentUserPassword =
 
       return {
 
-        success:
-          false,
+        success: false,
 
         code:
           'PASSWORD_UPDATE_ERROR',
@@ -1628,38 +2041,5 @@ export const changeCurrentUserPassword =
       };
 
     }
-
-  };
-
-
-// ======================================================
-// CERRAR SESIÓN
-// ======================================================
-
-export const logoutGymUser =
-  () => {
-
-    localStorage.removeItem(
-      AUTH_KEY
-    );
-
-
-    localStorage.removeItem(
-      SESSION_KEY
-    );
-
-
-    window.dispatchEvent(
-      new Event(
-        'gym-auth-update'
-      )
-    );
-
-
-    window.dispatchEvent(
-      new Event(
-        'gym-storage-update'
-      )
-    );
 
   };

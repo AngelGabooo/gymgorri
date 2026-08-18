@@ -1,7 +1,7 @@
 // src/services/couplePromotionService.js
 
 import {
-  getNextMemberId
+  getNextMemberIds
 } from '../utils/memberId';
 
 
@@ -14,8 +14,11 @@ export const createCoupleGroupId = () => {
   if (
     window.crypto?.randomUUID
   ) {
+
     return `COUPLE-${window.crypto.randomUUID()}`;
+
   }
+
 
   return (
     `COUPLE-${Date.now()}-` +
@@ -31,54 +34,55 @@ export const createCoupleGroupId = () => {
 
 
 // ======================================================
-// OBTENER DOS IDS CONSECUTIVOS SIN CONFIRMARLOS TODAVÍA
+// OBTENER DOS IDS CONSECUTIVOS
+// ======================================================
+//
+// memberId.js ya trabaja con el gymId actual.
+//
+// Por lo tanto:
+//
+// Power Gym:
+//
+// GYM-00001
+// GYM-00002
+//
+// Titan Gym:
+//
+// GYM-00001
+// GYM-00002
+//
 // ======================================================
 
 export const getNextCoupleMemberIds = () => {
 
-  const firstId =
-    getNextMemberId();
-
-  const match =
-    String(
-      firstId ||
-      ''
-    ).match(
-      /^GYM-(\d{5})$/
+  const ids =
+    getNextMemberIds(
+      2
     );
 
-  if (!match) {
+
+  if (
+    !Array.isArray(
+      ids
+    ) ||
+    ids.length !==
+    2
+  ) {
+
     throw new Error(
-      'No se pudo generar el ID inicial de la pareja.'
+      'No se pudieron generar los IDs para la pareja.'
     );
+
   }
 
-  const firstNumber =
-    Number(
-      match[1]
-    );
 
-  const secondId =
-    `GYM-${String(
-      firstNumber + 1
-    ).padStart(
-      5,
-      '0'
-    )}`;
-
-  return [
-    firstId,
-    secondId
-  ];
+  return ids;
 
 };
 
 
 // ======================================================
 // DIVIDIR EL TOTAL DE LA PAREJA ENTRE DOS
-// ======================================================
-// Evita errores de centavos. Ejemplo $651 -> 325.50 + 325.50.
-// Si hubiera un centavo impar, el segundo recibe la diferencia.
 // ======================================================
 
 export const splitCoupleTotal = (
@@ -94,21 +98,27 @@ export const splitCoupleTotal = (
       100
     );
 
+
   const firstCents =
     Math.floor(
       cents /
       2
     );
 
+
   const secondCents =
     cents -
     firstCents;
 
+
   return [
+
     firstCents /
       100,
+
     secondCents /
       100
+
   ];
 
 };
@@ -127,51 +137,100 @@ export const linkCoupleMembers = ({
     !Array.isArray(
       members
     ) ||
-    members.length !== 2
+    members.length !==
+    2
   ) {
+
     throw new Error(
       'La promoción de pareja requiere exactamente dos miembros.'
     );
+
   }
+
+
+  if (!groupId) {
+
+    throw new Error(
+      'No se recibió un ID válido para el grupo de pareja.'
+    );
+
+  }
+
 
   const [
     first,
     second
-  ] = members;
+  ] =
+    members;
+
+
+  if (
+    !first?.id ||
+    !second?.id
+  ) {
+
+    throw new Error(
+      'Ambas personas deben contar con un ID de miembro.'
+    );
+
+  }
+
 
   return [
+
     {
       ...first,
+
       registrationCategory:
         'couple',
+
       promotionProfile: {
+
         id:
           'couple',
+
         label:
           'Pareja',
+
         groupId,
+
         partnerMemberId:
           second.id,
+
         partnerName:
-          `${second.firstName || ''} ${second.lastName || ''}`.trim()
+          `${second.firstName || ''} ${second.lastName || ''}`
+            .trim()
+
       }
     },
+
+
     {
       ...second,
+
       registrationCategory:
         'couple',
+
       promotionProfile: {
+
         id:
           'couple',
+
         label:
           'Pareja',
+
         groupId,
+
         partnerMemberId:
           first.id,
+
         partnerName:
-          `${first.firstName || ''} ${first.lastName || ''}`.trim()
+          `${first.firstName || ''} ${first.lastName || ''}`
+            .trim()
+
       }
     }
+
   ];
 
 };

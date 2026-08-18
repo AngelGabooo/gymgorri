@@ -1,16 +1,15 @@
 // src/utils/deleteMemberPermanently.js
 
 import {
-  getStoredMembers
+  getStoredMembers,
+  getAllStoredMembers,
+  getCurrentGymContext,
+  saveAllStoredMembers
 } from './memberId';
 
 import {
   addMemberToBlacklist
 } from '../services/blacklistService';
-
-
-const MEMBERS_STORAGE_KEY =
-  'gym_control_members';
 
 
 // ======================================================
@@ -33,6 +32,23 @@ const RELATED_ARRAY_KEYS = [
 
 
 // ======================================================
+// TEMPORALES
+// ======================================================
+
+const TEMPORARY_KEYS = [
+
+  'gym_control_current_member',
+
+  'gym_control_pending_member',
+
+  'gym_control_registration_member',
+
+  'gym_control_last_member'
+
+];
+
+
+// ======================================================
 // LEER ARRAY
 // ======================================================
 
@@ -49,7 +65,9 @@ const readArray = (
 
 
     if (!raw) {
+
       return [];
+
     }
 
 
@@ -81,6 +99,52 @@ const readArray = (
 
 
 // ======================================================
+// GUARDAR ARRAY
+// ======================================================
+
+const saveArray = (
+  key,
+  data
+) => {
+
+  localStorage.setItem(
+    key,
+    JSON.stringify(
+      Array.isArray(
+        data
+      )
+        ? data
+        : []
+    )
+  );
+
+};
+
+
+// ======================================================
+// OBTENER GYM ID DEL REGISTRO
+// ======================================================
+
+const getRecordGymId = (
+  record
+) => {
+
+  return (
+
+    record?.gymId ||
+
+    record?.member?.gymId ||
+
+    record?.memberSnapshot?.gymId ||
+
+    null
+
+  );
+
+};
+
+
+// ======================================================
 // PERTENECE AL MIEMBRO
 // ======================================================
 
@@ -90,7 +154,9 @@ const belongsToMember = (
 ) => {
 
   if (!record) {
+
     return false;
+
   }
 
 
@@ -117,6 +183,84 @@ const belongsToMember = (
 
 
 // ======================================================
+// PERTENECE AL GIMNASIO
+// ======================================================
+
+const belongsToGym = (
+  record,
+  gymId
+) => {
+
+  // ====================================================
+  // LEGACY
+  // ====================================================
+
+  if (!gymId) {
+
+    return true;
+
+  }
+
+
+  return (
+    getRecordGymId(
+      record
+    ) ===
+    gymId
+  );
+
+};
+
+
+// ======================================================
+// DEBE ELIMINARSE
+// ======================================================
+
+const shouldDeleteRelatedRecord = (
+  record,
+  memberId,
+  gymId
+) => {
+
+  if (
+    !belongsToMember(
+      record,
+      memberId
+    )
+  ) {
+
+    return false;
+
+  }
+
+
+  // ====================================================
+  // MULTI-GIMNASIO
+  // ====================================================
+  //
+  // Si tenemos gymId solamente eliminamos registros que
+  // estén explícitamente asociados a ese gimnasio.
+  //
+  // Esto evita borrar accidentalmente información de otro.
+  //
+  // ====================================================
+
+  if (gymId) {
+
+    return belongsToGym(
+      record,
+      gymId
+    );
+
+  }
+
+
+  return true;
+
+};
+
+
+// ======================================================
 // ELIMINAR MIEMBRO
 // ======================================================
 
@@ -135,7 +279,8 @@ export const deleteMemberPermanently = (
 
     blacklistNotes = ''
 
-  } = options;
+  } =
+    options;
 
 
   // ====================================================
@@ -151,16 +296,22 @@ export const deleteMemberPermanently = (
   }
 
 
+  const {
+    gymId
+  } =
+    getCurrentGymContext();
+
+
   // ====================================================
-  // BUSCAR MIEMBRO
+  // BUSCAR MIEMBRO SOLO EN EL GIMNASIO ACTUAL
   // ====================================================
 
-  const members =
+  const scopedMembers =
     getStoredMembers();
 
 
   const member =
-    members.find(
+    scopedMembers.find(
       item =>
         item.id ===
         memberId
@@ -170,7 +321,7 @@ export const deleteMemberPermanently = (
   if (!member) {
 
     throw new Error(
-      'El miembro ya no existe en el almacenamiento local.'
+      'El miembro no existe o pertenece a otro gimnasio.'
     );
 
   }
@@ -182,7 +333,8 @@ export const deleteMemberPermanently = (
 
   const cleanReason =
     String(
-      reason || ''
+      reason ||
+      ''
     ).trim();
 
 
@@ -199,7 +351,7 @@ export const deleteMemberPermanently = (
 
 
   // ====================================================
-  // PRIMERO GUARDAMOS EL ANTECEDENTE
+  // LISTA NEGRA PRIMERO
   // ====================================================
 
   let blacklistRecord =
@@ -243,22 +395,48 @@ export const deleteMemberPermanently = (
 
 
   // ====================================================
-  // ELIMINAR MIEMBRO
+  // ELIMINAR SOLO AL MIEMBRO DEL GIMNASIO ACTUAL
   // ====================================================
 
+  const allMembers =
+    getAllStoredMembers();
+
+
   const remainingMembers =
-    members.filter(
-      item =>
-        item.id !==
-        memberId
+    allMembers.filter(
+      item => {
+
+        // ==================================================
+        // MULTI-GIMNASIO
+        // ==================================================
+
+        if (gymId) {
+
+          return !(
+            item.id ===
+              memberId &&
+            item.gymId ===
+              gymId
+          );
+
+        }
+
+
+        // ==================================================
+        // LEGACY
+        // ==================================================
+
+        return (
+          item.id !==
+          memberId
+        );
+
+      }
     );
 
 
-  localStorage.setItem(
-    MEMBERS_STORAGE_KEY,
-    JSON.stringify(
-      remainingMembers
-    )
+  saveAllStoredMembers(
+    remainingMembers
   );
 
 
@@ -276,7 +454,8 @@ export const deleteMemberPermanently = (
 
 
       if (
-        raw === null
+        raw ===
+        null
       ) {
 
         return;
@@ -293,18 +472,17 @@ export const deleteMemberPermanently = (
       const remainingRecords =
         records.filter(
           record =>
-            !belongsToMember(
+            !shouldDeleteRelatedRecord(
               record,
-              memberId
+              memberId,
+              gymId
             )
         );
 
 
-      localStorage.setItem(
+      saveArray(
         key,
-        JSON.stringify(
-          remainingRecords
-        )
+        remainingRecords
       );
 
     }
@@ -315,20 +493,7 @@ export const deleteMemberPermanently = (
   // LIMPIAR TEMPORALES
   // ====================================================
 
-  const temporaryKeys = [
-
-    'gym_control_current_member',
-
-    'gym_control_pending_member',
-
-    'gym_control_registration_member',
-
-    'gym_control_last_member'
-
-  ];
-
-
-  temporaryKeys.forEach(
+  TEMPORARY_KEYS.forEach(
     key => {
 
       try {
@@ -340,7 +505,9 @@ export const deleteMemberPermanently = (
 
 
         if (!raw) {
+
           return;
+
         }
 
 
@@ -350,14 +517,52 @@ export const deleteMemberPermanently = (
           );
 
 
-        if (
-
+        const sameMember =
           parsed?.id ===
             memberId ||
-
           parsed?.memberId ===
-            memberId
+            memberId;
 
+
+        if (!sameMember) {
+
+          return;
+
+        }
+
+
+        // ================================================
+        // LEGACY
+        // ================================================
+
+        if (!gymId) {
+
+          localStorage.removeItem(
+            key
+          );
+
+
+          return;
+
+        }
+
+
+        // ================================================
+        // MULTI-GIMNASIO
+        // ================================================
+
+        const temporaryGymId =
+
+          parsed?.gymId ||
+
+          parsed?.member?.gymId ||
+
+          null;
+
+
+        if (
+          temporaryGymId ===
+          gymId
         ) {
 
           localStorage.removeItem(
@@ -380,12 +585,13 @@ export const deleteMemberPermanently = (
 
 
   // ====================================================
-  // NO TOCAR CONTADOR
+  // NO TOCAR CONTADORES
   // ====================================================
   //
-  // gym_control_member_counter se conserva.
+  // El contador del gimnasio se conserva.
   //
-  // Un ID eliminado jamás vuelve a utilizarse.
+  // Si se elimina GYM-00005,
+  // el siguiente seguirá siendo GYM-00006.
   //
   // ====================================================
 
@@ -417,13 +623,19 @@ export const deleteMemberPermanently = (
     success:
       true,
 
+    gymId:
+      gymId ||
+      member?.gymId ||
+      null,
+
     memberId,
 
     deletedMember:
       member,
 
     remainingMembers:
-      remainingMembers.length,
+      getStoredMembers()
+        .length,
 
     blacklistRecord
 

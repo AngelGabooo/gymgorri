@@ -1,28 +1,144 @@
 // src/services/blacklistService.js
 
+
+// ======================================================
+// STORAGE
+// ======================================================
+
 export const BLACKLIST_KEY =
   'gym_control_blacklist';
+
+const SESSION_KEY =
+  'gym_control_session';
+
+const AUTH_KEY =
+  'isAuthenticated';
+
+
+// ======================================================
+// OBTENER CONTEXTO ACTUAL
+// ======================================================
+
+const getCurrentGymContext = () => {
+
+  try {
+
+    if (
+      localStorage.getItem(
+        AUTH_KEY
+      ) !==
+      'true'
+    ) {
+
+      return {
+        gymId: null,
+        gymCode: null,
+        gymName: null
+      };
+
+    }
+
+
+    const raw =
+      localStorage.getItem(
+        SESSION_KEY
+      );
+
+
+    if (!raw) {
+
+      return {
+        gymId: null,
+        gymCode: null,
+        gymName: null
+      };
+
+    }
+
+
+    const session =
+      JSON.parse(
+        raw
+      );
+
+
+    return {
+
+      gymId:
+        session?.gymId ||
+        null,
+
+      gymCode:
+        session?.gymCode ||
+        null,
+
+      gymName:
+        session?.gymName ||
+        null
+
+    };
+
+  } catch (error) {
+
+    console.error(
+      'Error leyendo contexto del gimnasio en lista negra:',
+      error
+    );
+
+
+    return {
+      gymId: null,
+      gymCode: null,
+      gymName: null
+    };
+
+  }
+
+};
 
 
 // ======================================================
 // NORMALIZADORES
 // ======================================================
 
-const normalizeText = (value = '') =>
-  String(value)
+const normalizeText = (
+  value = ''
+) =>
+
+  String(
+    value
+  )
     .trim()
     .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+    .normalize(
+      'NFD'
+    )
+    .replace(
+      /[\u0300-\u036f]/g,
+      ''
+    );
 
 
-const normalizePhone = (value = '') =>
-  String(value)
-    .replace(/\D/g, '');
+const normalizePhone = (
+  value = ''
+) =>
+
+  String(
+    value
+  )
+    .replace(
+      /\D/g,
+      ''
+    );
 
 
-const normalizeEmail = (value = '') =>
-  String(value)
+const normalizeEmail = (
+  value = ''
+) =>
+
+  String(
+    value
+  )
     .trim()
     .toLowerCase();
 
@@ -41,11 +157,34 @@ const createId = () => {
 
   }
 
+
   return (
     `BLK-${Date.now()}-` +
     Math.random()
       .toString(36)
-      .substring(2, 9)
+      .substring(
+        2,
+        9
+      )
+  );
+
+};
+
+
+// ======================================================
+// CREAR ID DE EVENTO
+// ======================================================
+
+const createEventId = () => {
+
+  return (
+    `EVT-${Date.now()}-` +
+    Math.random()
+      .toString(36)
+      .substring(
+        2,
+        7
+      )
   );
 
 };
@@ -60,10 +199,14 @@ const normalizeActor = (
 ) => {
 
   if (!actor) {
+
     return null;
+
   }
 
+
   return {
+
     id:
       actor.id ||
       actor.userId ||
@@ -81,17 +224,22 @@ const normalizeActor = (
 
     role:
       actor.role ||
-      ''
+      '',
+
+    gymId:
+      actor.gymId ||
+      null
+
   };
 
 };
 
 
 // ======================================================
-// OBTENER LISTA NEGRA
+// LEER TODOS LOS REGISTROS
 // ======================================================
 
-export const getBlacklist = () => {
+const getAllBlacklist = () => {
 
   try {
 
@@ -102,15 +250,21 @@ export const getBlacklist = () => {
 
 
     if (!raw) {
+
       return [];
+
     }
 
 
     const parsed =
-      JSON.parse(raw);
+      JSON.parse(
+        raw
+      );
 
 
-    return Array.isArray(parsed)
+    return Array.isArray(
+      parsed
+    )
       ? parsed
       : [];
 
@@ -121,6 +275,7 @@ export const getBlacklist = () => {
       error
     );
 
+
     return [];
 
   }
@@ -129,15 +284,17 @@ export const getBlacklist = () => {
 
 
 // ======================================================
-// GUARDAR LISTA NEGRA
+// GUARDAR TODOS LOS REGISTROS
 // ======================================================
 
-export const saveBlacklist = (
+const saveAllBlacklist = (
   records
 ) => {
 
   const safeRecords =
-    Array.isArray(records)
+    Array.isArray(
+      records
+    )
       ? records
       : [];
 
@@ -170,16 +327,214 @@ export const saveBlacklist = (
 
 
 // ======================================================
+// OBTENER LISTA NEGRA DEL GIMNASIO ACTUAL
+// ======================================================
+
+export const getBlacklist = () => {
+
+  const records =
+    getAllBlacklist();
+
+
+  const {
+    gymId
+  } =
+    getCurrentGymContext();
+
+
+  // Legacy
+  if (!gymId) {
+
+    return records;
+
+  }
+
+
+  return records.filter(
+    record =>
+      record?.gymId ===
+      gymId
+  );
+
+};
+
+
+// ======================================================
+// GUARDAR LISTA NEGRA DEL GIMNASIO ACTUAL
+// ======================================================
+
+export const saveBlacklist = (
+  records
+) => {
+
+  const safeRecords =
+    Array.isArray(
+      records
+    )
+      ? records
+      : [];
+
+
+  const {
+    gymId,
+    gymCode,
+    gymName
+  } =
+    getCurrentGymContext();
+
+
+  // ====================================================
+  // LEGACY
+  // ====================================================
+
+  if (!gymId) {
+
+    return saveAllBlacklist(
+      safeRecords
+    );
+
+  }
+
+
+  const allRecords =
+    getAllBlacklist();
+
+
+  const otherGyms =
+    allRecords.filter(
+      record =>
+        record?.gymId !==
+        gymId
+    );
+
+
+  const normalized =
+    safeRecords.map(
+      record => ({
+
+        ...record,
+
+        gymId,
+
+        gymCode:
+          record?.gymCode ||
+          gymCode ||
+          null,
+
+        gymName:
+          record?.gymName ||
+          gymName ||
+          null
+
+      })
+    );
+
+
+  saveAllBlacklist([
+    ...otherGyms,
+    ...normalized
+  ]);
+
+
+  return normalized;
+
+};
+
+
+// ======================================================
 // REGISTROS ACTIVOS
 // ======================================================
 
 export const getActiveBlacklist = () =>
+
   getBlacklist()
     .filter(
       record =>
         record?.status !==
         'cleared'
     );
+
+
+// ======================================================
+// COMPARAR REGISTRO CON MIEMBRO
+// ======================================================
+
+const recordMatchesMember = (
+  record,
+  member
+) => {
+
+  if (
+    !record ||
+    !member
+  ) {
+
+    return false;
+
+  }
+
+
+  if (
+    record.previousMemberId ===
+    member.id
+  ) {
+
+    return true;
+
+  }
+
+
+  const memberPhone =
+    normalizePhone(
+      member.phone
+    );
+
+
+  const recordPhone =
+    normalizePhone(
+      record.phone
+    );
+
+
+  if (
+    memberPhone &&
+    recordPhone &&
+    memberPhone ===
+    recordPhone
+  ) {
+
+    return true;
+
+  }
+
+
+  const memberEmail =
+    normalizeEmail(
+      member.email
+    );
+
+
+  const recordEmail =
+    normalizeEmail(
+      record.email
+    );
+
+
+  if (
+    memberEmail &&
+    recordEmail &&
+    memberEmail ===
+    recordEmail
+  ) {
+
+    return true;
+
+  }
+
+
+  return false;
+
+};
 
 
 // ======================================================
@@ -191,79 +546,19 @@ export const findBlacklistRecordByMember = (
 ) => {
 
   if (!member) {
+
     return null;
+
   }
 
 
-  const records =
-    getBlacklist();
-
-
-  const memberPhone =
-    normalizePhone(
-      member.phone
-    );
-
-
-  const memberEmail =
-    normalizeEmail(
-      member.email
-    );
-
-
   return (
-    records.find(
-      record => {
-
-        if (
-          record?.previousMemberId ===
-          member.id
-        ) {
-
-          return true;
-
-        }
-
-
-        const recordPhone =
-          normalizePhone(
-            record?.phone
-          );
-
-
-        const recordEmail =
-          normalizeEmail(
-            record?.email
-          );
-
-
-        if (
-          memberPhone &&
-          recordPhone &&
-          memberPhone ===
-          recordPhone
-        ) {
-
-          return true;
-
-        }
-
-
-        if (
-          memberEmail &&
-          recordEmail &&
-          memberEmail ===
-          recordEmail
-        ) {
-
-          return true;
-
-        }
-
-
-        return false;
-
-      }
+    getBlacklist().find(
+      record =>
+        recordMatchesMember(
+          record,
+          member
+        )
     ) ||
     null
   );
@@ -294,7 +589,8 @@ export const addMemberToBlacklist = ({
 
   const cleanReason =
     String(
-      reason || ''
+      reason ||
+      ''
     ).trim();
 
 
@@ -302,6 +598,32 @@ export const addMemberToBlacklist = ({
 
     throw new Error(
       'Debes indicar un motivo para agregar al miembro a la lista negra.'
+    );
+
+  }
+
+
+  const {
+    gymId,
+    gymCode,
+    gymName
+  } =
+    getCurrentGymContext();
+
+
+  // ====================================================
+  // SEGURIDAD
+  // ====================================================
+
+  if (
+    gymId &&
+    member?.gymId &&
+    member.gymId !==
+    gymId
+  ) {
+
+    throw new Error(
+      'No puedes agregar a lista negra un miembro de otro gimnasio.'
     );
 
   }
@@ -316,81 +638,22 @@ export const addMemberToBlacklist = ({
       .toISOString();
 
 
-  const memberPhone =
-    normalizePhone(
-      member.phone
-    );
-
-
-  const memberEmail =
-    normalizeEmail(
-      member.email
-    );
-
-
-  // ====================================================
-  // BUSCAR REGISTRO EXISTENTE
-  // ====================================================
-
   const existingIndex =
     records.findIndex(
-      record => {
-
-        if (
-          record?.previousMemberId ===
-          member.id
-        ) {
-
-          return true;
-
-        }
-
-
-        const recordPhone =
-          normalizePhone(
-            record?.phone
-          );
-
-
-        const recordEmail =
-          normalizeEmail(
-            record?.email
-          );
-
-
-        if (
-          memberPhone &&
-          recordPhone &&
-          memberPhone ===
-          recordPhone
-        ) {
-
-          return true;
-
-        }
-
-
-        if (
-          memberEmail &&
-          recordEmail &&
-          memberEmail ===
-          recordEmail
-        ) {
-
-          return true;
-
-        }
-
-
-        return false;
-
-      }
+      record =>
+        recordMatchesMember(
+          record,
+          member
+        )
     );
 
 
   const previousRecord =
-    existingIndex >= 0
-      ? records[existingIndex]
+    existingIndex >=
+    0
+      ? records[
+          existingIndex
+        ]
       : null;
 
 
@@ -405,14 +668,14 @@ export const addMemberToBlacklist = ({
   const historyEvent = {
 
     id:
-      `EVT-${Date.now()}-${Math.random()
-        .toString(36)
-        .substring(2, 7)}`,
+      createEventId(),
 
     type:
-      source === 'blocked'
+      source ===
+      'blocked'
         ? 'blocked'
-        : source === 'deleted'
+        : source ===
+          'deleted'
           ? 'deleted'
           : source,
 
@@ -423,7 +686,8 @@ export const addMemberToBlacklist = ({
 
     notes:
       String(
-        notes || ''
+        notes ||
+        ''
       ).trim(),
 
     date:
@@ -444,6 +708,21 @@ export const addMemberToBlacklist = ({
     id:
       previousRecord?.id ||
       createId(),
+
+    gymId:
+      member?.gymId ||
+      gymId ||
+      null,
+
+    gymCode:
+      member?.gymCode ||
+      gymCode ||
+      null,
+
+    gymName:
+      member?.gymName ||
+      gymName ||
+      null,
 
     previousMemberId:
       member.id,
@@ -483,7 +762,8 @@ export const addMemberToBlacklist = ({
 
     notes:
       String(
-        notes || ''
+        notes ||
+        ''
       ).trim(),
 
     source,
@@ -500,10 +780,14 @@ export const addMemberToBlacklist = ({
 
     addedBy:
       previousRecord?.addedBy ||
-      normalizeActor(actor),
+      normalizeActor(
+        actor
+      ),
 
     lastActionBy:
-      normalizeActor(actor),
+      normalizeActor(
+        actor
+      ),
 
     clearedAt:
       null,
@@ -523,6 +807,11 @@ export const addMemberToBlacklist = ({
 
       id:
         member.id,
+
+      gymId:
+        member?.gymId ||
+        gymId ||
+        null,
 
       firstName:
         member.firstName ||
@@ -576,10 +865,13 @@ export const addMemberToBlacklist = ({
 
 
   if (
-    existingIndex >= 0
+    existingIndex >=
+    0
   ) {
 
-    records[existingIndex] =
+    records[
+      existingIndex
+    ] =
       entry;
 
   } else {
@@ -602,7 +894,7 @@ export const addMemberToBlacklist = ({
 
 
 // ======================================================
-// MARCAR ANTECEDENTE COMO RESUELTO
+// MARCAR REGISTRO COMO RESUELTO
 // ======================================================
 
 export const clearBlacklistRecord = ({
@@ -624,7 +916,8 @@ export const clearBlacklistRecord = ({
 
 
   if (
-    index < 0
+    index <
+    0
   ) {
 
     throw new Error(
@@ -641,15 +934,23 @@ export const clearBlacklistRecord = ({
 
   const previousHistory =
     Array.isArray(
-      records[index].history
+      records[
+        index
+      ]?.history
     )
-      ? records[index].history
+      ? records[
+          index
+        ].history
       : [];
 
 
-  records[index] = {
+  records[
+    index
+  ] = {
 
-    ...records[index],
+    ...records[
+      index
+    ],
 
     status:
       'cleared',
@@ -659,7 +960,8 @@ export const clearBlacklistRecord = ({
 
     clearedNote:
       String(
-        note || ''
+        note ||
+        ''
       ).trim(),
 
     clearedBy:
@@ -673,10 +975,9 @@ export const clearBlacklistRecord = ({
     history: [
       ...previousHistory,
       {
+
         id:
-          `EVT-${Date.now()}-${Math.random()
-            .toString(36)
-            .substring(2, 7)}`,
+          createEventId(),
 
         type:
           'cleared',
@@ -697,6 +998,7 @@ export const clearBlacklistRecord = ({
           normalizeActor(
             actor
           )
+
       }
     ]
 
@@ -708,13 +1010,15 @@ export const clearBlacklistRecord = ({
   );
 
 
-  return records[index];
+  return records[
+    index
+  ];
 
 };
 
 
 // ======================================================
-// RESOLVER LISTA NEGRA POR MIEMBRO
+// RESOLVER POR MIEMBRO
 // ======================================================
 
 export const clearBlacklistByMember = ({
@@ -724,7 +1028,9 @@ export const clearBlacklistByMember = ({
 }) => {
 
   if (!member?.id) {
+
     return null;
+
   }
 
 
@@ -735,14 +1041,18 @@ export const clearBlacklistByMember = ({
   const index =
     records.findIndex(
       record =>
-        record?.status !== 'cleared' &&
-        record?.previousMemberId ===
-          member.id
+        record?.status !==
+          'cleared' &&
+        recordMatchesMember(
+          record,
+          member
+        )
     );
 
 
   if (
-    index < 0
+    index <
+    0
   ) {
 
     return null;
@@ -751,12 +1061,16 @@ export const clearBlacklistByMember = ({
 
 
   return clearBlacklistRecord({
+
     blacklistId:
-      records[index].id,
+      records[
+        index
+      ].id,
 
     actor,
 
     note
+
   });
 
 };
@@ -785,7 +1099,8 @@ export const reactivateBlacklistRecord = ({
 
 
   if (
-    index < 0
+    index <
+    0
   ) {
 
     throw new Error(
@@ -803,22 +1118,32 @@ export const reactivateBlacklistRecord = ({
   const cleanReason =
     String(
       reason ||
-      records[index].reason ||
+      records[
+        index
+      ].reason ||
       ''
     ).trim();
 
 
   const previousHistory =
     Array.isArray(
-      records[index].history
+      records[
+        index
+      ]?.history
     )
-      ? records[index].history
+      ? records[
+          index
+        ].history
       : [];
 
 
-  records[index] = {
+  records[
+    index
+  ] = {
 
-    ...records[index],
+    ...records[
+      index
+    ],
 
     status:
       'active',
@@ -846,10 +1171,9 @@ export const reactivateBlacklistRecord = ({
     history: [
       ...previousHistory,
       {
+
         id:
-          `EVT-${Date.now()}-${Math.random()
-            .toString(36)
-            .substring(2, 7)}`,
+          createEventId(),
 
         type:
           'reactivated',
@@ -867,6 +1191,7 @@ export const reactivateBlacklistRecord = ({
           normalizeActor(
             actor
           )
+
       }
     ]
 
@@ -878,7 +1203,9 @@ export const reactivateBlacklistRecord = ({
   );
 
 
-  return records[index];
+  return records[
+    index
+  ];
 
 };
 
@@ -920,9 +1247,11 @@ export const findBlacklistMatches = ({
     .map(
       record => {
 
-        const matchedBy = [];
+        const matchedBy =
+          [];
 
-        let score = 0;
+        let score =
+          0;
 
 
         const recordPhone =
@@ -955,7 +1284,9 @@ export const findBlacklistMatches = ({
             'teléfono'
           );
 
-          score += 100;
+
+          score +=
+            100;
 
         }
 
@@ -971,7 +1302,9 @@ export const findBlacklistMatches = ({
             'correo'
           );
 
-          score += 100;
+
+          score +=
+            100;
 
         }
 
@@ -987,7 +1320,9 @@ export const findBlacklistMatches = ({
             'nombre'
           );
 
-          score += 35;
+
+          score +=
+            35;
 
         }
 
@@ -1011,7 +1346,10 @@ export const findBlacklistMatches = ({
         0
     )
     .sort(
-      (a, b) =>
+      (
+        a,
+        b
+      ) =>
         b.matchScore -
         a.matchScore
     );
@@ -1036,5 +1374,6 @@ export const hasStrongBlacklistMatch = (
       Number(
         match.matchScore ||
         0
-      ) >= 100
+      ) >=
+      100
   );

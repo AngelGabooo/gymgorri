@@ -62,8 +62,9 @@ import {
 
 import {
   createGymUserId,
-  getGymUsers,
-  saveGymUsers
+  getGymUsersByGymId,
+  isGymUserEmailTaken,
+  saveGymUsersForGym
 } from '../../utils/gymSettings';
 
 import {
@@ -337,6 +338,30 @@ const SettingsPage = () => {
     getCurrentSession();
 
 
+  const currentGymId =
+    currentSession?.gymId ||
+    null;
+
+  const currentGymCode =
+    currentSession?.gymCode ||
+    null;
+
+  const currentGymName =
+    currentSession?.gymName ||
+    null;
+
+  const currentGymStatus =
+    currentSession?.gymStatus ||
+    'active';
+
+
+  const loadCurrentGymUsers =
+    () =>
+      getGymUsersByGymId(
+        currentGymId
+      );
+
+
   const {
     settings:
       globalSettings,
@@ -522,7 +547,7 @@ const SettingsPage = () => {
     setUsers
   ] = useState(
     () =>
-      getGymUsers()
+      loadCurrentGymUsers()
   );
 
 
@@ -682,7 +707,7 @@ const [
         () => {
 
           setUsers(
-            getGymUsers()
+            loadCurrentGymUsers()
           );
 
 
@@ -1986,17 +2011,10 @@ const [
 
 
       const emailExists =
-        users.some(
-          user =>
-            user.id !==
-              editingUser?.id &&
-            String(
-              user.email
-            )
-              .toLowerCase() ===
-            userForm.email
-              .trim()
-              .toLowerCase()
+        isGymUserEmailTaken(
+          userForm.email,
+          editingUser?.id ||
+            null
         );
 
 
@@ -2122,6 +2140,22 @@ const [
 
           passwordHash,
 
+          gymId:
+            editingUser?.gymId ||
+            currentGymId,
+
+          gymCode:
+            editingUser?.gymCode ||
+            currentGymCode,
+
+          gymName:
+            editingUser?.gymName ||
+            currentGymName,
+
+          gymStatus:
+            editingUser?.gymStatus ||
+            currentGymStatus,
+
           role,
 
           permissions,
@@ -2159,7 +2193,8 @@ const [
               ];
 
 
-        saveGymUsers(
+        saveGymUsersForGym(
+          currentGymId,
           updatedUsers
         );
 
@@ -2279,7 +2314,8 @@ const [
       );
 
 
-    saveGymUsers(
+    saveGymUsersForGym(
+      currentGymId,
       updatedUsers
     );
 
@@ -2376,7 +2412,8 @@ const [
         );
 
 
-      saveGymUsers(
+      saveGymUsersForGym(
+        currentGymId,
         updatedUsers
       );
 

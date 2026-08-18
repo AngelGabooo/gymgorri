@@ -1,5 +1,4 @@
-// src/components/Members/Register/RegisterCouplePage.jsx
-
+// src/components/Members/Register/RegisterCoupleSubscriptionPage.jsx
 import React, {
   useMemo,
   useRef,
@@ -366,7 +365,7 @@ const PersonForm = ({
 };
 
 
-const RegisterCouplePage = () => {
+const RegisterCoupleSubscriptionPage = () => {
 
   const navigate =
     useNavigate();
@@ -1126,4 +1125,4 @@ const RegisterCouplePage = () => {
 };
 
 
-export default RegisterCouplePage;
+export default RegisterCoupleSubscriptionPage;

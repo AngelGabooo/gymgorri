@@ -17,42 +17,31 @@ export const DEFAULT_GYM_SETTINGS = {
   // IDENTIDAD
   // ====================================================
 
-  gymName:
-    'GYM CONTROL FITNESS',
+  gymName: 'GYM CONTROL FITNESS',
 
-  shortName:
-    'GYM CONTROL',
+  shortName: 'GYM CONTROL',
 
-  phone:
-    '',
+  phone: '',
 
-  email:
-    '',
+  email: '',
 
-  whatsapp:
-    '',
+  whatsapp: '',
 
-  address:
-    '',
+  address: '',
 
-  colony:
-    '',
+  colony: '',
 
-  city:
-    '',
+  city: '',
 
-  state:
-    '',
+  state: '',
 
-  postalCode:
-    '',
+  postalCode: '',
 
-  logo:
-    null,
+  logo: null,
 
 
   // ====================================================
-  // SUSCRIPCIONES
+  // SUSCRIPCIONES DE LOS MIEMBROS DEL GIMNASIO
   // ====================================================
 
   subscriptionPlans: {
@@ -87,11 +76,9 @@ export const DEFAULT_GYM_SETTINGS = {
 
   },
 
-  warningDays:
-    5,
+  warningDays: 5,
 
-  renewalConserveDays:
-    true,
+  renewalConserveDays: true,
 
 
   // ====================================================
@@ -102,17 +89,13 @@ export const DEFAULT_GYM_SETTINGS = {
 
     student: {
 
-      id:
-        'student',
+      id: 'student',
 
-      label:
-        'Estudiante',
+      label: 'Estudiante',
 
-      enabled:
-        true,
+      enabled: true,
 
-      referenceRequired:
-        false,
+      referenceRequired: false,
 
       plans: {
 
@@ -147,22 +130,15 @@ export const DEFAULT_GYM_SETTINGS = {
 
     couple: {
 
-      id:
-        'couple',
+      id: 'couple',
 
-      label:
-        'Pareja',
+      label: 'Pareja',
 
-      // El precio fijo configurado en Pareja representa
-      // el TOTAL a cobrar por las dos personas.
-      pricingScope:
-        'pair_total',
+      pricingScope: 'pair_total',
 
-      enabled:
-        true,
+      enabled: true,
 
-      referenceRequired:
-        false,
+      referenceRequired: false,
 
       plans: {
 
@@ -197,17 +173,13 @@ export const DEFAULT_GYM_SETTINGS = {
 
     agreement: {
 
-      id:
-        'agreement',
+      id: 'agreement',
 
-      label:
-        'Convenio',
+      label: 'Convenio',
 
-      enabled:
-        true,
+      enabled: true,
 
-      referenceRequired:
-        true,
+      referenceRequired: true,
 
       plans: {
 
@@ -242,17 +214,13 @@ export const DEFAULT_GYM_SETTINGS = {
 
     courtesy: {
 
-      id:
-        'courtesy',
+      id: 'courtesy',
 
-      label:
-        'Cortesía',
+      label: 'Cortesía',
 
-      enabled:
-        true,
+      enabled: true,
 
-      referenceRequired:
-        true,
+      referenceRequired: true,
 
       plans: {
 
@@ -288,25 +256,20 @@ export const DEFAULT_GYM_SETTINGS = {
 
 
   // ====================================================
-  // RETENCIÓN / CLIENTES INACTIVOS
+  // RETENCIÓN
   // ====================================================
 
   retention: {
 
-    enabled:
-      true,
+    enabled: true,
 
-    followUpDays:
-      7,
+    followUpDays: 7,
 
-    riskDays:
-      15,
+    riskDays: 15,
 
-    inactiveDays:
-      30,
+    inactiveDays: 30,
 
-    includeNeverAttended:
-      true
+    includeNeverAttended: true
 
   },
 
@@ -317,11 +280,9 @@ export const DEFAULT_GYM_SETTINGS = {
 
   whatsappSettings: {
 
-    enabled:
-      true,
+    enabled: true,
 
-    defaultCountryCode:
-      '52',
+    defaultCountryCode: '52',
 
     templates: {
 
@@ -382,36 +343,28 @@ export const DEFAULT_GYM_SETTINGS = {
   // CAPACIDAD
   // ====================================================
 
-  capacity:
-    80,
+  capacity: 80,
 
-  capacityWarning:
-    80,
+  capacityWarning: 80,
 
-  capacityCritical:
-    95,
+  capacityCritical: 95,
 
 
   // ====================================================
   // PAGOS
   // ====================================================
 
-  currency:
-    'MXN',
+  currency: 'MXN',
 
   paymentMethods: {
 
-    efectivo:
-      true,
+    efectivo: true,
 
-    transferencia:
-      true,
+    transferencia: true,
 
-    tarjeta:
-      true,
+    tarjeta: true,
 
-    otro:
-      true
+    otro: true
 
   },
 
@@ -420,11 +373,9 @@ export const DEFAULT_GYM_SETTINGS = {
   // RECIBOS
   // ====================================================
 
-  receiptPrefix:
-    'PAY',
+  receiptPrefix: 'PAY',
 
-  memberPrefix:
-    'GYM',
+  memberPrefix: 'GYM',
 
   receiptMessage:
     'Gracias por entrenar con nosotros.',
@@ -434,45 +385,34 @@ export const DEFAULT_GYM_SETTINGS = {
   // CONTROL DE ACCESO
   // ====================================================
 
-  qrPermanent:
-    true,
+  qrPermanent: true,
 
-  autoEntryExit:
-    true,
+  autoEntryExit: true,
 
-  doubleScanProtection:
-    true,
+  doubleScanProtection: true,
 
-  scanInterval:
-    30,
+  scanInterval: 30,
 
-  resultDisplayTime:
-    5,
+  resultDisplayTime: 5,
 
-  showPhotoAfterScan:
-    true,
+  showPhotoAfterScan: true,
 
 
   // ====================================================
-  // INFORMACIÓN VISIBLE EN TERMINAL
+  // INFORMACIÓN PÚBLICA
   // ====================================================
 
   publicInfo: {
 
-    name:
-      true,
+    name: true,
 
-    photo:
-      true,
+    photo: true,
 
-    accessStatus:
-      true,
+    accessStatus: true,
 
-    entryTime:
-      true,
+    entryTime: true,
 
-    expiryWarning:
-      true
+    expiryWarning: true
 
   },
 
@@ -483,14 +423,11 @@ export const DEFAULT_GYM_SETTINGS = {
 
   sounds: {
 
-    allowed:
-      true,
+    allowed: true,
 
-    denied:
-      true,
+    denied: true,
 
-    volume:
-      70
+    volume: 70
 
   },
 
@@ -499,8 +436,7 @@ export const DEFAULT_GYM_SETTINGS = {
   // CÁMARA
   // ====================================================
 
-  cameraDevice:
-    'default',
+  cameraDevice: 'default',
 
 
   // ====================================================
@@ -557,7 +493,7 @@ export const DEFAULT_GYM_SETTINGS = {
 
 
 // ======================================================
-// MERGE DE PLANES DE UNA PROMOCIÓN
+// MERGE DE PLANES DE PROMOCIÓN
 // ======================================================
 
 const mergePromotionPlans = (
@@ -569,19 +505,14 @@ const mergePromotionPlans = (
 
 
   Object.entries(
-    defaultPromotion.plans ||
-    {}
+    defaultPromotion.plans || {}
   ).forEach(
-    (
-      [
-        planId,
-        defaultPlan
-      ]
-    ) => {
+    ([
+      planId,
+      defaultPlan
+    ]) => {
 
-      result[
-        planId
-      ] = {
+      result[planId] = {
 
         ...defaultPlan,
 
@@ -617,21 +548,17 @@ const mergePromotions = (
   Object.entries(
     DEFAULT_GYM_SETTINGS.promotions
   ).forEach(
-    (
-      [
-        key,
-        defaultPromotion
-      ]
-    ) => {
+    ([
+      key,
+      defaultPromotion
+    ]) => {
 
       const storedPromotion =
         storedPromotions?.[key] ||
         {};
 
 
-      result[
-        key
-      ] = {
+      result[key] = {
 
         ...defaultPromotion,
 
@@ -655,7 +582,7 @@ const mergePromotions = (
 
 
 // ======================================================
-// MERGE PROFUNDO BÁSICO
+// MERGE PROFUNDO
 // ======================================================
 
 const mergeSettings = (
@@ -667,6 +594,7 @@ const mergeSettings = (
     ...DEFAULT_GYM_SETTINGS,
 
     ...stored,
+
 
     subscriptionPlans: {
 
@@ -692,23 +620,32 @@ const mergeSettings = (
 
     },
 
+
     promotions:
       mergePromotions(
-        stored.promotions ||
-        {}
+        stored.promotions || {}
       ),
 
+
     retention: {
+
       ...DEFAULT_GYM_SETTINGS.retention,
+
       ...(stored.retention || {})
+
     },
 
+
     whatsappSettings: {
+
       ...DEFAULT_GYM_SETTINGS.whatsappSettings,
+
       ...(stored.whatsappSettings || {}),
 
       templates: {
+
         ...DEFAULT_GYM_SETTINGS.whatsappSettings.templates,
+
         ...(stored.whatsappSettings?.templates || {}),
 
         renewal: {
@@ -750,27 +687,45 @@ const mergeSettings = (
           ...DEFAULT_GYM_SETTINGS.whatsappSettings.templates.couple,
           ...(stored.whatsappSettings?.templates?.couple || {})
         }
+
       }
+
     },
+
 
     paymentMethods: {
+
       ...DEFAULT_GYM_SETTINGS.paymentMethods,
+
       ...(stored.paymentMethods || {})
+
     },
+
 
     publicInfo: {
+
       ...DEFAULT_GYM_SETTINGS.publicInfo,
+
       ...(stored.publicInfo || {})
+
     },
+
 
     sounds: {
+
       ...DEFAULT_GYM_SETTINGS.sounds,
+
       ...(stored.sounds || {})
+
     },
 
+
     hours: {
+
       ...DEFAULT_GYM_SETTINGS.hours,
+
       ...(stored.hours || {})
+
     }
 
   };
@@ -830,9 +785,7 @@ export const getGymSettings =
       );
 
 
-      return mergeSettings(
-        {}
-      );
+      return mergeSettings({});
 
     }
 
@@ -892,9 +845,7 @@ export const resetGymSettings =
   () => {
 
     const restored =
-      mergeSettings(
-        {}
-      );
+      mergeSettings({});
 
 
     localStorage.setItem(
@@ -929,7 +880,15 @@ export const resetGymSettings =
 
 
 // ======================================================
-// USUARIOS
+// OBTENER TODOS LOS USUARIOS
+// ======================================================
+//
+// IMPORTANTE:
+// Esta función sigue regresando TODOS los usuarios porque
+// authService necesita buscar el correo globalmente.
+//
+// Para Settings usaremos getGymUsersByGymId().
+//
 // ======================================================
 
 export const getGymUsers =
@@ -944,7 +903,9 @@ export const getGymUsers =
 
 
       if (!raw) {
+
         return [];
+
       }
 
 
@@ -976,17 +937,25 @@ export const getGymUsers =
 
 
 // ======================================================
-// GUARDAR USUARIOS
+// GUARDAR TODOS LOS USUARIOS
 // ======================================================
 
 export const saveGymUsers = (
   users
 ) => {
 
+  const safeUsers =
+    Array.isArray(
+      users
+    )
+      ? users
+      : [];
+
+
   localStorage.setItem(
     GYM_USERS_KEY,
     JSON.stringify(
-      users
+      safeUsers
     )
   );
 
@@ -998,7 +967,159 @@ export const saveGymUsers = (
   );
 
 
-  return users;
+  return safeUsers;
+
+};
+
+
+// ======================================================
+// OBTENER USUARIOS DE UN GIMNASIO
+// ======================================================
+
+export const getGymUsersByGymId = (
+  gymId
+) => {
+
+  const users =
+    getGymUsers();
+
+
+  // ====================================================
+  // COMPATIBILIDAD CON SISTEMA ANTERIOR
+  // ====================================================
+
+  if (!gymId) {
+
+    return users;
+
+  }
+
+
+  return users.filter(
+    user =>
+      user.gymId ===
+      gymId
+  );
+
+};
+
+
+// ======================================================
+// GUARDAR ÚNICAMENTE USUARIOS DE UN GIMNASIO
+// ======================================================
+//
+// Esto evita que Power Gym pueda borrar o modificar
+// accidentalmente usuarios de Titan Gym.
+//
+// ======================================================
+
+export const saveGymUsersForGym = (
+  gymId,
+  gymUsers
+) => {
+
+  const safeUsers =
+    Array.isArray(
+      gymUsers
+    )
+      ? gymUsers
+      : [];
+
+
+  // ====================================================
+  // COMPATIBILIDAD LEGACY
+  // ====================================================
+
+  if (!gymId) {
+
+    return saveGymUsers(
+      safeUsers
+    );
+
+  }
+
+
+  const allUsers =
+    getGymUsers();
+
+
+  // Usuarios pertenecientes a otros gimnasios.
+  const otherGymUsers =
+    allUsers.filter(
+      user =>
+        user.gymId !==
+        gymId
+    );
+
+
+  // Nos aseguramos de que todos los usuarios guardados
+  // desde este gimnasio tengan el gymId correcto.
+  const normalizedGymUsers =
+    safeUsers.map(
+      user => ({
+
+        ...user,
+
+        gymId
+
+      })
+    );
+
+
+  return saveGymUsers([
+    ...otherGymUsers,
+    ...normalizedGymUsers
+  ]);
+
+};
+
+
+// ======================================================
+// COMPROBAR SI UN CORREO YA EXISTE
+// ======================================================
+//
+// El correo es ÚNICO a nivel global.
+// No permitimos:
+//
+// Power Gym -> empleado@gmail.com
+// Titan Gym -> empleado@gmail.com
+//
+// porque el login utiliza el correo para identificar
+// una única cuenta.
+//
+// ======================================================
+
+export const isGymUserEmailTaken = (
+  email,
+  excludeUserId = null
+) => {
+
+  const normalizedEmail =
+    String(
+      email || ''
+    )
+      .trim()
+      .toLowerCase();
+
+
+  if (!normalizedEmail) {
+
+    return false;
+
+  }
+
+
+  return getGymUsers().some(
+    user =>
+      user.id !==
+        excludeUserId &&
+      String(
+        user.email || ''
+      )
+        .trim()
+        .toLowerCase() ===
+      normalizedEmail
+  );
 
 };
 

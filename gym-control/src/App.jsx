@@ -9,9 +9,25 @@ import {
   Navigate
 } from 'react-router-dom';
 
+
+// ======================================================
+// LOGIN
+// ======================================================
+
 import LoginPage from './pages/LoginPage';
 
+
+// ======================================================
+// DASHBOARD
+// ======================================================
+
 import DashboardPage from './components/Dashboard/DashboardPage';
+
+
+// ======================================================
+// MIEMBROS
+// ======================================================
+
 import MembersPage from './components/Members/MembersPage';
 import BlacklistPage from './components/Members/BlacklistPage';
 import InactiveMembersPage from './components/Members/InactiveMembersPage';
@@ -28,6 +44,11 @@ import MemberProfilePage from './components/Members/Profile/MemberProfilePage';
 import EditMemberPage from './components/Members/Profile/EditMemberPage';
 import RenewSubscriptionPage from './components/Members/Profile/RenewSubscriptionPage';
 
+
+// ======================================================
+// MÓDULOS PRINCIPALES
+// ======================================================
+
 import SubscriptionsPage from './components/Subscriptions/SubscriptionsPage';
 import AccessControlPage from './components/Access/AccessControlPage';
 import AttendancePage from './components/Attendance/AttendancePage';
@@ -37,15 +58,26 @@ import CashPage from './components/Cash/CashPage';
 import ReportsPage from './components/Reports/ReportsPage';
 import SettingsPage from './components/Settings/SettingsPage';
 
-import ImportDataPage from './components/Import/ImportDataPage';
 
 // ======================================================
-// VENTAS DE PRODUCTOS
+// IMPORTACIÓN
+// ======================================================
+
+import ImportDataPage from './components/Import/ImportDataPage';
+
+
+// ======================================================
+// VENTAS
 // ======================================================
 
 import SalesPage from './components/Sales/SalesPage';
 import ProductsPage from './components/Sales/ProductsPage';
 import SalesHistoryPage from './components/Sales/SalesHistoryPage';
+
+
+// ======================================================
+// PROTECCIÓN SISTEMA GIMNASIO
+// ======================================================
 
 import ProtectedRoute from './components/Layout/ProtectedRoute';
 
@@ -53,6 +85,30 @@ import {
   getCurrentSession,
   getFirstAllowedRoute
 } from './services/authService';
+
+
+// ======================================================
+// NEXGYM
+// ======================================================
+
+import NexgymAdminLayout from './nexgym/components/layout/NexgymAdminLayout';
+
+import NexgymProtectedRoute from './nexgym/components/auth/NexgymProtectedRoute';
+
+import NexgymLoginPage from './nexgym/pages/NexgymLoginPage';
+
+import NexgymTestPage from './nexgym/pages/NexgymTestPage';
+import NexgymDashboardPage from './nexgym/pages/NexgymDashboardPage';
+import NexgymGymsPage from './nexgym/pages/NexgymGymsPage';
+import NexgymGymDetailPage from './nexgym/pages/NexgymGymDetailPage';
+import NexgymNewGymPage from './nexgym/pages/NexgymNewGymPage';
+
+import NexgymSubscriptionsPage from './nexgym/pages/NexgymSubscriptionsPage';
+import NexgymBillingPage from './nexgym/pages/NexgymBillingPage';
+
+import NexgymSupportPage from './nexgym/pages/NexgymSupportPage';
+import NexgymActivityPage from './nexgym/pages/NexgymActivityPage';
+import NexgymSettingsPage from './nexgym/pages/NexgymSettingsPage';
 
 
 // ======================================================
@@ -95,8 +151,9 @@ function App() {
 
       <Routes>
 
+
         {/* ================================================= */}
-        {/* LOGIN */}
+        {/* LOGIN GIMNASIO */}
         {/* ================================================= */}
 
         <Route
@@ -126,10 +183,10 @@ function App() {
         <Route
           path="/dashboard"
           element={
-            <ProtectedRoute
-              permission="dashboard"
-            >
+            <ProtectedRoute permission="dashboard">
+
               <DashboardPage />
+
             </ProtectedRoute>
           }
         />
@@ -142,111 +199,110 @@ function App() {
         <Route
           path="/members"
           element={
-            <ProtectedRoute
-              permission="members"
-            >
+            <ProtectedRoute permission="members">
+
               <MembersPage />
+
             </ProtectedRoute>
           }
         />
 
-
-        {/* LISTA NEGRA */}
 
         <Route
           path="/members/blacklist"
           element={
-            <ProtectedRoute
-              permission="members"
-            >
+            <ProtectedRoute permission="members">
+
               <BlacklistPage />
+
             </ProtectedRoute>
           }
         />
 
-
-        {/* IMPORTACIÓN DE DATOS */}
-        {/* Se deja antes de /members/:id */}
 
         <Route
           path="/members/import"
           element={
-            <ProtectedRoute
-              permission="members"
-            >
+            <ProtectedRoute permission="members">
+
               <ImportDataPage />
+
             </ProtectedRoute>
           }
         />
 
-
-        {/* REGISTRO INDIVIDUAL */}
 
         <Route
           path="/members/register"
           element={
-            <ProtectedRoute
-              permission="members"
-            >
+            <ProtectedRoute permission="members">
+
               <RegisterMemberPage />
+
             </ProtectedRoute>
           }
         />
+
 
         <Route
           path="/members/register/subscription"
           element={
-            <ProtectedRoute
-              permission="members"
-            >
+            <ProtectedRoute permission="members">
+
               <RegisterSubscriptionPage />
+
             </ProtectedRoute>
           }
         />
+
 
         <Route
           path="/members/register/qr"
           element={
-            <ProtectedRoute
-              permission="members"
-            >
+            <ProtectedRoute permission="members">
+
               <RegisterQRPage />
+
             </ProtectedRoute>
           }
         />
 
 
-        {/* PROMOCIÓN DE PAREJA */}
+        {/* ================================================= */}
+        {/* PAREJAS */}
+        {/* ================================================= */}
 
         <Route
           path="/members/register/couple"
           element={
-            <ProtectedRoute
-              permission="members"
-            >
+            <ProtectedRoute permission="members">
+
               <RegisterCouplePage />
+
             </ProtectedRoute>
           }
         />
+
 
         <Route
           path="/members/register/couple/subscription"
           element={
-            <ProtectedRoute
-              permission="members"
-            >
+            <ProtectedRoute permission="members">
+
               <RegisterCoupleSubscriptionPage />
+
             </ProtectedRoute>
           }
         />
 
+
         <Route
           path="/members/register/couple/access"
           element={
-            <ProtectedRoute
-              permission="members"
-            >
+            <ProtectedRoute permission="members">
+
               <RegisterCoupleQRPage />
+
             </ProtectedRoute>
           }
         />
@@ -259,32 +315,34 @@ function App() {
         <Route
           path="/members/:id"
           element={
-            <ProtectedRoute
-              permission="members"
-            >
+            <ProtectedRoute permission="members">
+
               <MemberProfilePage />
+
             </ProtectedRoute>
           }
         />
+
 
         <Route
           path="/members/:id/edit"
           element={
-            <ProtectedRoute
-              permission="members"
-            >
+            <ProtectedRoute permission="members">
+
               <EditMemberPage />
+
             </ProtectedRoute>
           }
         />
 
+
         <Route
           path="/members/:id/renew"
           element={
-            <ProtectedRoute
-              permission="subscriptions"
-            >
+            <ProtectedRoute permission="subscriptions">
+
               <RenewSubscriptionPage />
+
             </ProtectedRoute>
           }
         />
@@ -297,26 +355,26 @@ function App() {
         <Route
           path="/subscriptions"
           element={
-            <ProtectedRoute
-              permission="subscriptions"
-            >
+            <ProtectedRoute permission="subscriptions">
+
               <SubscriptionsPage />
+
             </ProtectedRoute>
           }
         />
 
 
         {/* ================================================= */}
-        {/* CONTROL DE ACCESO */}
+        {/* ACCESO */}
         {/* ================================================= */}
 
         <Route
           path="/access"
           element={
-            <ProtectedRoute
-              permission="access"
-            >
+            <ProtectedRoute permission="access">
+
               <AccessControlPage />
+
             </ProtectedRoute>
           }
         />
@@ -329,10 +387,10 @@ function App() {
         <Route
           path="/attendance"
           element={
-            <ProtectedRoute
-              permission="attendance"
-            >
+            <ProtectedRoute permission="attendance">
+
               <AttendancePage />
+
             </ProtectedRoute>
           }
         />
@@ -345,10 +403,10 @@ function App() {
         <Route
           path="/retention"
           element={
-            <ProtectedRoute
-              permission="retention"
-            >
+            <ProtectedRoute permission="retention">
+
               <InactiveMembersPage />
+
             </ProtectedRoute>
           }
         />
@@ -361,48 +419,50 @@ function App() {
         <Route
           path="/visits"
           element={
-            <ProtectedRoute
-              permission="visits"
-            >
+            <ProtectedRoute permission="visits">
+
               <VisitsPage />
+
             </ProtectedRoute>
           }
         />
 
 
         {/* ================================================= */}
-        {/* VENTAS DE PRODUCTOS */}
+        {/* VENTAS */}
         {/* ================================================= */}
 
         <Route
           path="/sales"
           element={
-            <ProtectedRoute
-              permission="sales"
-            >
+            <ProtectedRoute permission="sales">
+
               <SalesPage />
+
             </ProtectedRoute>
           }
         />
+
 
         <Route
           path="/sales/history"
           element={
-            <ProtectedRoute
-              permission="sales_history"
-            >
+            <ProtectedRoute permission="sales_history">
+
               <SalesHistoryPage />
+
             </ProtectedRoute>
           }
         />
 
+
         <Route
           path="/sales/products"
           element={
-            <ProtectedRoute
-              permission="products"
-            >
+            <ProtectedRoute permission="products">
+
               <ProductsPage />
+
             </ProtectedRoute>
           }
         />
@@ -415,10 +475,10 @@ function App() {
         <Route
           path="/payments"
           element={
-            <ProtectedRoute
-              permission="payments"
-            >
+            <ProtectedRoute permission="payments">
+
               <PaymentsPage />
+
             </ProtectedRoute>
           }
         />
@@ -431,10 +491,10 @@ function App() {
         <Route
           path="/cash"
           element={
-            <ProtectedRoute
-              permission="cash"
-            >
+            <ProtectedRoute permission="cash">
+
               <CashPage />
+
             </ProtectedRoute>
           }
         />
@@ -447,10 +507,10 @@ function App() {
         <Route
           path="/reports"
           element={
-            <ProtectedRoute
-              permission="reports"
-            >
+            <ProtectedRoute permission="reports">
+
               <ReportsPage />
+
             </ProtectedRoute>
           }
         />
@@ -463,13 +523,171 @@ function App() {
         <Route
           path="/settings"
           element={
-            <ProtectedRoute
-              permission="settings"
-            >
+            <ProtectedRoute permission="settings">
+
               <SettingsPage />
+
             </ProtectedRoute>
           }
         />
+
+
+        {/* ================================================= */}
+        {/* LOGIN NEXGYM SUPER ADMIN */}
+        {/* ================================================= */}
+
+        <Route
+          path="/nexgym/login"
+          element={
+            <NexgymLoginPage />
+          }
+        />
+
+
+        {/* ================================================= */}
+        {/* NEXGYM ADMIN PROTEGIDO */}
+        {/* ================================================= */}
+
+        <Route
+          path="/nexgym"
+          element={
+            <NexgymProtectedRoute>
+
+              <NexgymAdminLayout />
+
+            </NexgymProtectedRoute>
+          }
+        >
+
+
+          {/* ================================================= */}
+          {/* INICIO */}
+          {/* ================================================= */}
+
+          <Route
+            index
+            element={
+              <Navigate
+                to="/nexgym/dashboard"
+                replace
+              />
+            }
+          />
+
+
+          {/* ================================================= */}
+          {/* DASHBOARD NEXGYM */}
+          {/* ================================================= */}
+
+          <Route
+            path="dashboard"
+            element={
+              <NexgymDashboardPage />
+            }
+          />
+
+
+          {/* ================================================= */}
+          {/* GIMNASIOS */}
+          {/* ================================================= */}
+
+          <Route
+            path="gyms"
+            element={
+              <NexgymGymsPage />
+            }
+          />
+
+
+          <Route
+            path="gyms/new"
+            element={
+              <NexgymNewGymPage />
+            }
+          />
+
+
+          <Route
+            path="gyms/:id"
+            element={
+              <NexgymGymDetailPage />
+            }
+          />
+
+
+          {/* ================================================= */}
+          {/* SUSCRIPCIONES NEXGYM */}
+          {/* ================================================= */}
+
+          <Route
+            path="subscriptions"
+            element={
+              <NexgymSubscriptionsPage />
+            }
+          />
+
+
+          {/* ================================================= */}
+          {/* PAGOS NEXGYM */}
+          {/* ================================================= */}
+
+          <Route
+            path="billing"
+            element={
+              <NexgymBillingPage />
+            }
+          />
+
+
+          {/* ================================================= */}
+          {/* SOPORTE NEXGYM */}
+          {/* ================================================= */}
+
+          <Route
+            path="support"
+            element={
+              <NexgymSupportPage />
+            }
+          />
+
+
+          {/* ================================================= */}
+          {/* ACTIVIDAD NEXGYM */}
+          {/* ================================================= */}
+
+          <Route
+            path="activity"
+            element={
+              <NexgymActivityPage />
+            }
+          />
+
+
+          {/* ================================================= */}
+          {/* CONFIGURACIÓN NEXGYM */}
+          {/* ================================================= */}
+
+          <Route
+            path="settings"
+            element={
+              <NexgymSettingsPage />
+            }
+          />
+
+
+          {/* ================================================= */}
+          {/* TEST */}
+          {/* ================================================= */}
+
+          <Route
+            path="test"
+            element={
+              <NexgymTestPage />
+            }
+          />
+
+
+        </Route>
 
 
         {/* ================================================= */}
@@ -482,6 +700,7 @@ function App() {
             <RootRedirect />
           }
         />
+
 
       </Routes>
 

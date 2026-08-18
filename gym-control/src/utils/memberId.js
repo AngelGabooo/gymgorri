@@ -1,42 +1,348 @@
 // src/utils/memberId.js
 
+
+// ======================================================
+// STORAGE
+// ======================================================
+
 const MEMBER_COUNTER_KEY =
   'gym_control_member_counter';
 
-const MEMBERS_STORAGE_KEY =
+const MEMBER_COUNTERS_KEY =
+  'gym_control_member_counters';
+
+export const MEMBERS_STORAGE_KEY =
   'gym_control_members';
 
+const SESSION_KEY =
+  'gym_control_session';
+
+const AUTH_KEY =
+  'isAuthenticated';
+
 
 // ======================================================
-// OBTENER MIEMBROS
+// OBTENER SESIÓN SIN IMPORTAR authService
+// ======================================================
+//
+// IMPORTANTE:
+//
+// authService importa hashValue desde este archivo.
+//
+// Por eso NO debemos importar authService aquí porque
+// crearíamos una dependencia circular.
+//
 // ======================================================
 
-export const getStoredMembers = () => {
+const getSessionSnapshot = () => {
+
   try {
+
+    const authenticated =
+      localStorage.getItem(
+        AUTH_KEY
+      );
+
+
+    if (
+      authenticated !==
+      'true'
+    ) {
+
+      return null;
+
+    }
+
+
+    const raw =
+      localStorage.getItem(
+        SESSION_KEY
+      );
+
+
+    if (!raw) {
+
+      return null;
+
+    }
+
+
+    const parsed =
+      JSON.parse(
+        raw
+      );
+
+
+    return (
+      parsed &&
+      typeof parsed === 'object'
+    )
+      ? parsed
+      : null;
+
+  } catch (error) {
+
+    console.error(
+      'Error leyendo sesión desde memberId:',
+      error
+    );
+
+
+    return null;
+
+  }
+
+};
+
+
+// ======================================================
+// CONTEXTO DEL GIMNASIO ACTUAL
+// ======================================================
+
+export const getCurrentGymContext = () => {
+
+  const session =
+    getSessionSnapshot();
+
+
+  return {
+
+    gymId:
+      session?.gymId ||
+      null,
+
+    gymCode:
+      session?.gymCode ||
+      null,
+
+    gymName:
+      session?.gymName ||
+      null
+
+  };
+
+};
+
+
+// ======================================================
+// OBTENER TODOS LOS MIEMBROS SIN FILTRO
+// ======================================================
+//
+// Esta función es principalmente para utilidades internas
+// como eliminación permanente.
+//
+// Las pantallas normales deben usar getStoredMembers().
+//
+// ======================================================
+
+export const getAllStoredMembers = () => {
+
+  try {
+
     const data =
       localStorage.getItem(
         MEMBERS_STORAGE_KEY
       );
 
+
     if (!data) {
+
       return [];
+
     }
 
-    const parsed =
-      JSON.parse(data);
 
-    return Array.isArray(parsed)
+    const parsed =
+      JSON.parse(
+        data
+      );
+
+
+    return Array.isArray(
+      parsed
+    )
       ? parsed
       : [];
 
   } catch (error) {
+
     console.error(
-      'Error leyendo miembros:',
+      'Error leyendo todos los miembros:',
       error
     );
 
+
     return [];
+
   }
+
+};
+
+
+// ======================================================
+// OBTENER MIEMBROS DEL GIMNASIO ACTUAL
+// ======================================================
+
+export const getStoredMembers = () => {
+
+  const members =
+    getAllStoredMembers();
+
+
+  const {
+    gymId
+  } =
+    getCurrentGymContext();
+
+
+  // ====================================================
+  // MODO LEGACY
+  // ====================================================
+  //
+  // Si la instalación todavía no tiene gymId conservamos
+  // el comportamiento anterior.
+  //
+  // ====================================================
+
+  if (!gymId) {
+
+    return members;
+
+  }
+
+
+  return members.filter(
+    member =>
+      member?.gymId ===
+      gymId
+  );
+
+};
+
+
+// ======================================================
+// GUARDAR TODOS LOS MIEMBROS
+// ======================================================
+
+export const saveAllStoredMembers = (
+  members
+) => {
+
+  const safeMembers =
+    Array.isArray(
+      members
+    )
+      ? members
+      : [];
+
+
+  localStorage.setItem(
+    MEMBERS_STORAGE_KEY,
+    JSON.stringify(
+      safeMembers
+    )
+  );
+
+
+  window.dispatchEvent(
+    new Event(
+      'gym-storage-update'
+    )
+  );
+
+
+  return safeMembers;
+
+};
+
+
+// ======================================================
+// OBTENER CONTADORES POR GIMNASIO
+// ======================================================
+
+const getMemberCounters = () => {
+
+  try {
+
+    const raw =
+      localStorage.getItem(
+        MEMBER_COUNTERS_KEY
+      );
+
+
+    if (!raw) {
+
+      return {};
+
+    }
+
+
+    const parsed =
+      JSON.parse(
+        raw
+      );
+
+
+    return (
+      parsed &&
+      typeof parsed === 'object' &&
+      !Array.isArray(
+        parsed
+      )
+    )
+      ? parsed
+      : {};
+
+  } catch (error) {
+
+    console.error(
+      'Error leyendo contadores de miembros:',
+      error
+    );
+
+
+    return {};
+
+  }
+
+};
+
+
+// ======================================================
+// GUARDAR CONTADORES
+// ======================================================
+
+const saveMemberCounters = (
+  counters
+) => {
+
+  localStorage.setItem(
+    MEMBER_COUNTERS_KEY,
+    JSON.stringify(
+      counters || {}
+    )
+  );
+
+};
+
+
+// ======================================================
+// CLAVE DEL CONTADOR ACTUAL
+// ======================================================
+
+const getCounterScopeKey = () => {
+
+  const {
+    gymId
+  } =
+    getCurrentGymContext();
+
+
+  return (
+    gymId ||
+    '__legacy__'
+  );
+
 };
 
 
@@ -49,33 +355,93 @@ const getHighestMemberNumber = () => {
   const members =
     getStoredMembers();
 
-  let highest = -1;
+
+  // Empezamos en 0 para que el primer ID sea:
+  //
+  // GYM-00001
+
+  let highest = 0;
+
 
   members.forEach(
-    (member) => {
+    member => {
 
       const match =
         String(
-          member?.id || ''
+          member?.id ||
+          ''
         ).match(
           /^GYM-(\d{5})$/
         );
 
-      if (match) {
 
-        highest =
-          Math.max(
-            highest,
-            Number(
-              match[1]
-            )
-          );
+      if (!match) {
+
+        return;
 
       }
+
+
+      highest =
+        Math.max(
+          highest,
+          Number(
+            match[1]
+          )
+        );
 
     }
   );
 
+
+  const {
+    gymId
+  } =
+    getCurrentGymContext();
+
+
+  // ====================================================
+  // MULTI-GIMNASIO
+  // ====================================================
+
+  if (gymId) {
+
+    const counters =
+      getMemberCounters();
+
+
+    const storedCounter =
+      Number(
+        counters[
+          getCounterScopeKey()
+        ] ??
+        0
+      );
+
+
+    if (
+      !Number.isNaN(
+        storedCounter
+      )
+    ) {
+
+      highest =
+        Math.max(
+          highest,
+          storedCounter
+        );
+
+    }
+
+
+    return highest;
+
+  }
+
+
+  // ====================================================
+  // LEGACY
+  // ====================================================
 
   const counterValue =
     localStorage.getItem(
@@ -84,13 +450,15 @@ const getHighestMemberNumber = () => {
 
 
   if (
-    counterValue !== null
+    counterValue !==
+    null
   ) {
 
     const numericCounter =
       Number(
         counterValue
       );
+
 
     if (
       !Number.isNaN(
@@ -110,6 +478,7 @@ const getHighestMemberNumber = () => {
 
 
   return highest;
+
 };
 
 
@@ -122,8 +491,10 @@ export const getNextMemberId = () => {
   const highest =
     getHighestMemberNumber();
 
+
   const next =
     highest + 1;
+
 
   return `GYM-${String(
     next
@@ -148,6 +519,7 @@ export const getNextMemberIds = (
       quantity
     );
 
+
   const safeQuantity =
     Number.isFinite(
       numericQuantity
@@ -162,7 +534,8 @@ export const getNextMemberIds = (
 
 
   if (
-    safeQuantity === 0
+    safeQuantity ===
+    0
   ) {
 
     return [];
@@ -172,6 +545,7 @@ export const getNextMemberIds = (
 
   const highest =
     getHighestMemberNumber();
+
 
   const initial =
     highest + 1;
@@ -190,6 +564,7 @@ export const getNextMemberIds = (
       const numericId =
         initial +
         index;
+
 
       return `GYM-${String(
         numericId
@@ -214,7 +589,8 @@ export const confirmMemberId = (
 
   const match =
     String(
-      memberId || ''
+      memberId ||
+      ''
     ).match(
       /^GYM-(\d{5})$/
     );
@@ -226,6 +602,7 @@ export const confirmMemberId = (
       'ID inválido:',
       memberId
     );
+
 
     return;
 
@@ -249,23 +626,80 @@ export const confirmMemberId = (
   }
 
 
+  const {
+    gymId
+  } =
+    getCurrentGymContext();
+
+
+  // ====================================================
+  // CONTADOR POR GIMNASIO
+  // ====================================================
+
+  if (gymId) {
+
+    const counters =
+      getMemberCounters();
+
+
+    const scopeKey =
+      getCounterScopeKey();
+
+
+    const current =
+      Number(
+        counters[
+          scopeKey
+        ] ??
+        0
+      );
+
+
+    if (
+      Number.isNaN(
+        current
+      ) ||
+      numeric >
+      current
+    ) {
+
+      counters[
+        scopeKey
+      ] =
+        numeric;
+
+
+      saveMemberCounters(
+        counters
+      );
+
+    }
+
+
+    return;
+
+  }
+
+
+  // ====================================================
+  // CONTADOR LEGACY
+  // ====================================================
+
   const current =
     Number(
       localStorage.getItem(
         MEMBER_COUNTER_KEY
-      ) ?? -1
+      ) ??
+      0
     );
 
 
-  /*
-   * Nunca retrocedemos el contador.
-   */
   if (
     Number.isNaN(
       current
     ) ||
     numeric >
-      current
+    current
   ) {
 
     localStorage.setItem(
@@ -302,7 +736,9 @@ export const createUniqueToken = () => {
     '-' +
     Math.random()
       .toString(36)
-      .substring(2)
+      .substring(
+        2
+      )
   );
 
 };
@@ -310,6 +746,11 @@ export const createUniqueToken = () => {
 
 // ======================================================
 // SHA-256
+// ======================================================
+//
+// authService utiliza esta función.
+// NO ELIMINAR.
+//
 // ======================================================
 
 export const hashValue = async (
@@ -356,9 +797,11 @@ export const hashValue = async (
 
   return hashArray
     .map(
-      (byte) =>
+      byte =>
         byte
-          .toString(16)
+          .toString(
+            16
+          )
           .padStart(
             2,
             '0'
@@ -372,6 +815,11 @@ export const hashValue = async (
 // ======================================================
 // PIN AUTOMÁTICO ÚNICO
 // ======================================================
+//
+// La comprobación se realiza únicamente contra miembros
+// del gimnasio que inició sesión.
+//
+// ======================================================
 
 export const generateUniquePin =
   async () => {
@@ -384,7 +832,7 @@ export const generateUniquePin =
       new Set(
         members
           .map(
-            (member) =>
+            member =>
               member
                 ?.access
                 ?.pin
@@ -396,7 +844,8 @@ export const generateUniquePin =
       );
 
 
-    let attempts = 0;
+    let attempts =
+      0;
 
 
     while (
@@ -404,7 +853,8 @@ export const generateUniquePin =
       100
     ) {
 
-      attempts += 1;
+      attempts +=
+        1;
 
 
       const random =
@@ -496,6 +946,73 @@ export const generateFaceId =
 
 
 // ======================================================
+// PREPARAR MIEMBRO PARA EL GIMNASIO ACTUAL
+// ======================================================
+
+const normalizeMemberForCurrentGym = (
+  member
+) => {
+
+  const {
+    gymId,
+    gymCode,
+    gymName
+  } =
+    getCurrentGymContext();
+
+
+  // ====================================================
+  // MODO LEGACY
+  // ====================================================
+
+  if (!gymId) {
+
+    return {
+      ...member
+    };
+
+  }
+
+
+  // ====================================================
+  // PROTECCIÓN
+  // ====================================================
+
+  if (
+    member?.gymId &&
+    member.gymId !==
+    gymId
+  ) {
+
+    throw new Error(
+      'No puedes guardar un miembro perteneciente a otro gimnasio.'
+    );
+
+  }
+
+
+  return {
+
+    ...member,
+
+    gymId,
+
+    gymCode:
+      gymCode ||
+      member?.gymCode ||
+      null,
+
+    gymName:
+      gymName ||
+      member?.gymName ||
+      null
+
+  };
+
+};
+
+
+// ======================================================
 // GUARDAR MIEMBRO
 // ======================================================
 
@@ -515,55 +1032,79 @@ export const saveMember = (
   }
 
 
-  const members =
-    getStoredMembers();
+  const normalizedMember =
+    normalizeMemberForCurrentGym(
+      member
+    );
+
+
+  const allMembers =
+    getAllStoredMembers();
+
+
+  const {
+    gymId
+  } =
+    getCurrentGymContext();
 
 
   const index =
-    members.findIndex(
-      (item) =>
-        item.id ===
-        member.id
+    allMembers.findIndex(
+      item => {
+
+        // Multi-gimnasio
+        if (gymId) {
+
+          return (
+            item.id ===
+              normalizedMember.id &&
+            item.gymId ===
+              gymId
+          );
+
+        }
+
+
+        // Legacy
+        return (
+          item.id ===
+          normalizedMember.id
+        );
+
+      }
     );
 
 
   if (
-    index >= 0
+    index >=
+    0
   ) {
 
-    members[index] =
-      member;
+    allMembers[
+      index
+    ] =
+      normalizedMember;
 
   } else {
 
-    members.push(
-      member
+    allMembers.push(
+      normalizedMember
     );
 
   }
 
 
-  localStorage.setItem(
-    MEMBERS_STORAGE_KEY,
-    JSON.stringify(
-      members
-    )
+  saveAllStoredMembers(
+    allMembers
   );
 
 
   confirmMemberId(
-    member.id
+    normalizedMember.id
   );
 
 
-  window.dispatchEvent(
-    new Event(
-      'gym-storage-update'
-    )
-  );
-
-
-  return member;
+  return normalizedMember;
 
 };
 
@@ -576,9 +1117,16 @@ export const getMemberById = (
   memberId
 ) => {
 
+  if (!memberId) {
+
+    return null;
+
+  }
+
+
   return (
     getStoredMembers().find(
-      (member) =>
+      member =>
         member.id ===
         memberId
     ) ||
@@ -609,7 +1157,7 @@ export const getMemberByQRToken = (
 
   return (
     getStoredMembers().find(
-      (member) =>
+      member =>
         member.id ===
           memberId &&
         member

@@ -29,8 +29,9 @@ import {
 
 import {
   createGymUserId,
-  getGymUsers,
-  saveGymUsers
+  getGymUsersByGymId,
+  isGymUserEmailTaken,
+  saveGymUsersForGym
 } from '../../utils/gymSettings';
 
 import {
@@ -123,12 +124,36 @@ const SystemUsersManager =
       getCurrentSession();
 
 
+    const currentGymId =
+      session?.gymId ||
+      null;
+
+    const currentGymCode =
+      session?.gymCode ||
+      null;
+
+    const currentGymName =
+      session?.gymName ||
+      null;
+
+    const currentGymStatus =
+      session?.gymStatus ||
+      'active';
+
+
+    const loadCurrentGymUsers =
+      () =>
+        getGymUsersByGymId(
+          currentGymId
+        );
+
+
     const [
       users,
       setUsers
     ] = useState(
       () =>
-        getGymUsers()
+        loadCurrentGymUsers()
     );
 
 
@@ -208,7 +233,7 @@ const SystemUsersManager =
       () => {
 
         setUsers(
-          getGymUsers()
+          loadCurrentGymUsers()
         );
 
       };
@@ -566,17 +591,10 @@ const handleUserPermissionToggle =
 
 
         const duplicate =
-          users.some(
-            user =>
-              user.id !==
-                editingUser?.id &&
-              String(
-                user.email
-              )
-                .toLowerCase() ===
-              form.email
-                .trim()
-                .toLowerCase()
+          isGymUserEmailTaken(
+            form.email,
+            editingUser?.id ||
+              null
           );
 
 
@@ -686,6 +704,22 @@ const handleUserPermissionToggle =
 
             passwordHash,
 
+            gymId:
+              editingUser?.gymId ||
+              currentGymId,
+
+            gymCode:
+              editingUser?.gymCode ||
+              currentGymCode,
+
+            gymName:
+              editingUser?.gymName ||
+              currentGymName,
+
+            gymStatus:
+              editingUser?.gymStatus ||
+              currentGymStatus,
+
             role:
               form.role,
 
@@ -724,7 +758,8 @@ const handleUserPermissionToggle =
                 ];
 
 
-          saveGymUsers(
+          saveGymUsersForGym(
+            currentGymId,
             updatedUsers
           );
 
@@ -817,7 +852,8 @@ const handleUserPermissionToggle =
           );
 
 
-        saveGymUsers(
+        saveGymUsersForGym(
+          currentGymId,
           updated
         );
 
@@ -875,7 +911,8 @@ const handleUserPermissionToggle =
           );
 
 
-        saveGymUsers(
+        saveGymUsersForGym(
+          currentGymId,
           updated
         );
 
