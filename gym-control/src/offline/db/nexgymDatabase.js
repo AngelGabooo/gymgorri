@@ -22,28 +22,11 @@ export const db =
 
 
 // ======================================================
-// ESQUEMA
+// VERSIÓN 1
 // ======================================================
 //
-// IMPORTANTE:
-//
-// La base anterior era únicamente de pruebas.
-//
-// Ahora la creamos directamente con claves adecuadas
-// para arquitectura multi-gimnasio.
-//
-// Las tablas que pertenecen a un gimnasio utilizan:
-//
-// [gymId+id]
-//
-// como primary key.
-//
-// Esto permite:
-//
-// gym_a + GYM-00001
-// gym_b + GYM-00001
-//
-// sin conflictos.
+// NO ELIMINAR.
+// Ya existe en instalaciones anteriores.
 //
 // ======================================================
 
@@ -51,145 +34,289 @@ db.version(
   1
 ).stores({
 
-  // ====================================================
-  // GIMNASIOS
-  // ====================================================
-
   gyms:
     'id, gymCode, name, updatedAt, syncStatus',
-
-
-  // ====================================================
-  // USUARIOS
-  // ====================================================
 
   gymUsers:
     '[gymId+id], gymId, id, email, role, status, updatedAt, syncStatus, [gymId+email]',
 
-
-  // ====================================================
-  // MIEMBROS
-  // ====================================================
-
   members:
     '[gymId+id], gymId, id, status, firstName, lastName, phone, updatedAt, syncStatus',
-
-
-  // ====================================================
-  // SUSCRIPCIONES
-  // ====================================================
 
   memberSubscriptions:
     '[gymId+id], gymId, id, memberId, status, startDate, endDate, updatedAt, syncStatus, [gymId+memberId]',
 
-
-  // ====================================================
-  // PAGOS
-  // ====================================================
-
   memberPayments:
     '[gymId+id], gymId, id, memberId, date, status, updatedAt, syncStatus, [gymId+memberId]',
-
-
-  // ====================================================
-  // ASISTENCIAS
-  // ====================================================
 
   attendance:
     '[gymId+id], gymId, id, memberId, type, date, createdAt, syncStatus, [gymId+memberId]',
 
-
-  // ====================================================
-  // ACCESOS
-  // ====================================================
-
   accessLogs:
     '[gymId+id], gymId, id, memberId, method, status, createdAt, syncStatus, [gymId+memberId]',
-
-
-  // ====================================================
-  // VISITAS
-  // ====================================================
 
   visits:
     '[gymId+id], gymId, id, status, createdAt, updatedAt, syncStatus',
 
-
-  // ====================================================
-  // PRODUCTOS
-  // ====================================================
-
   products:
     '[gymId+id], gymId, id, name, sku, status, updatedAt, syncStatus',
-
-
-  // ====================================================
-  // VENTAS
-  // ====================================================
 
   sales:
     '[gymId+id], gymId, id, date, status, createdAt, updatedAt, syncStatus',
 
-
-  // ====================================================
-  // CAJA
-  // ====================================================
-
   cashMovements:
     '[gymId+id], gymId, id, type, date, createdAt, syncStatus',
-
-
-  // ====================================================
-  // LISTA NEGRA
-  // ====================================================
 
   blacklist:
     '[gymId+id], gymId, id, memberId, createdAt, syncStatus, [gymId+memberId]',
 
-
-  // ====================================================
-  // CONFIGURACIÓN
-  // ====================================================
-
   gymSettings:
     'gymId, updatedAt, syncStatus',
-
-
-  // ====================================================
-  // ACCESOS DE MIEMBROS
-  // ====================================================
 
   memberAccess:
     '[gymId+id], gymId, id, memberId, type, updatedAt, syncStatus, [gymId+memberId]',
 
-
-  // ====================================================
-  // BIOMETRÍA
-  // ====================================================
-
   biometrics:
     '[gymId+id], gymId, id, memberId, updatedAt, syncStatus, [gymId+memberId]',
-
-
-  // ====================================================
-  // SOPORTE
-  // ====================================================
 
   supportTickets:
     '[gymId+id], gymId, id, status, priority, createdAt, updatedAt, syncStatus',
 
+  syncQueue:
+    'id, gymId, entity, entityId, operation, status, createdAt, updatedAt, [gymId+status]',
 
-  // ====================================================
-  // COLA
-  // ====================================================
+  metadata:
+    'key, updatedAt'
+
+});
+
+
+// ======================================================
+// VERSIÓN 2
+// ======================================================
+//
+// ASISTENCIA DE VISITAS.
+//
+// ======================================================
+
+db.version(
+  2
+).stores({
+
+  gyms:
+    'id, gymCode, name, updatedAt, syncStatus',
+
+  gymUsers:
+    '[gymId+id], gymId, id, email, role, status, updatedAt, syncStatus, [gymId+email]',
+
+  members:
+    '[gymId+id], gymId, id, status, firstName, lastName, phone, updatedAt, syncStatus',
+
+  memberSubscriptions:
+    '[gymId+id], gymId, id, memberId, status, startDate, endDate, updatedAt, syncStatus, [gymId+memberId]',
+
+  memberPayments:
+    '[gymId+id], gymId, id, memberId, date, status, updatedAt, syncStatus, [gymId+memberId]',
+
+  attendance:
+    '[gymId+id], gymId, id, memberId, type, date, createdAt, syncStatus, [gymId+memberId]',
+
+  accessLogs:
+    '[gymId+id], gymId, id, memberId, method, status, createdAt, syncStatus, [gymId+memberId]',
+
+  visits:
+    '[gymId+id], gymId, id, status, createdAt, updatedAt, syncStatus',
+
+  visitAttendance:
+    '[gymId+id], gymId, id, visitId, visitorId, status, entryAt, exitAt, createdAt, updatedAt, syncStatus, [gymId+visitId]',
+
+  products:
+    '[gymId+id], gymId, id, name, sku, status, updatedAt, syncStatus',
+
+  sales:
+    '[gymId+id], gymId, id, date, status, createdAt, updatedAt, syncStatus',
+
+  cashMovements:
+    '[gymId+id], gymId, id, type, date, createdAt, syncStatus',
+
+  blacklist:
+    '[gymId+id], gymId, id, memberId, createdAt, syncStatus, [gymId+memberId]',
+
+  gymSettings:
+    'gymId, updatedAt, syncStatus',
+
+  memberAccess:
+    '[gymId+id], gymId, id, memberId, type, updatedAt, syncStatus, [gymId+memberId]',
+
+  biometrics:
+    '[gymId+id], gymId, id, memberId, updatedAt, syncStatus, [gymId+memberId]',
+
+  supportTickets:
+    '[gymId+id], gymId, id, status, priority, createdAt, updatedAt, syncStatus',
 
   syncQueue:
     'id, gymId, entity, entityId, operation, status, createdAt, updatedAt, [gymId+status]',
 
+  metadata:
+    'key, updatedAt'
 
-  // ====================================================
-  // METADATA
-  // ====================================================
+});
+
+
+// ======================================================
+// VERSIÓN 3
+// ======================================================
+//
+// PRODUCTOS + INVENTARIO.
+//
+// ======================================================
+
+db.version(
+  3
+).stores({
+
+  gyms:
+    'id, gymCode, name, updatedAt, syncStatus',
+
+  gymUsers:
+    '[gymId+id], gymId, id, email, role, status, updatedAt, syncStatus, [gymId+email]',
+
+  members:
+    '[gymId+id], gymId, id, status, firstName, lastName, phone, updatedAt, syncStatus',
+
+  memberSubscriptions:
+    '[gymId+id], gymId, id, memberId, status, startDate, endDate, updatedAt, syncStatus, [gymId+memberId]',
+
+  memberPayments:
+    '[gymId+id], gymId, id, memberId, date, status, updatedAt, syncStatus, [gymId+memberId]',
+
+  attendance:
+    '[gymId+id], gymId, id, memberId, type, date, createdAt, syncStatus, [gymId+memberId]',
+
+  accessLogs:
+    '[gymId+id], gymId, id, memberId, method, status, createdAt, syncStatus, [gymId+memberId]',
+
+  visits:
+    '[gymId+id], gymId, id, status, createdAt, updatedAt, syncStatus',
+
+  visitAttendance:
+    '[gymId+id], gymId, id, visitId, visitorId, status, entryAt, exitAt, createdAt, updatedAt, syncStatus, [gymId+visitId]',
+
+  products:
+    '[gymId+id], gymId, id, name, sku, barcode, status, updatedAt, syncStatus',
+
+  inventoryMovements:
+    '[gymId+id], gymId, id, productId, type, referenceId, createdAt, updatedAt, syncStatus, [gymId+productId]',
+
+  sales:
+    '[gymId+id], gymId, id, date, status, createdAt, updatedAt, syncStatus',
+
+  cashMovements:
+    '[gymId+id], gymId, id, type, date, createdAt, syncStatus',
+
+  blacklist:
+    '[gymId+id], gymId, id, memberId, createdAt, syncStatus, [gymId+memberId]',
+
+  gymSettings:
+    'gymId, updatedAt, syncStatus',
+
+  memberAccess:
+    '[gymId+id], gymId, id, memberId, type, updatedAt, syncStatus, [gymId+memberId]',
+
+  biometrics:
+    '[gymId+id], gymId, id, memberId, updatedAt, syncStatus, [gymId+memberId]',
+
+  supportTickets:
+    '[gymId+id], gymId, id, status, priority, createdAt, updatedAt, syncStatus',
+
+  syncQueue:
+    'id, gymId, entity, entityId, operation, status, createdAt, updatedAt, [gymId+status]',
+
+  metadata:
+    'key, updatedAt'
+
+});
+
+
+// ======================================================
+// VERSIÓN 4
+// ======================================================
+//
+// NUEVO:
+//
+// cashShifts
+//
+// También añadimos índices útiles para:
+// - ventas por turno
+// - movimientos por turno
+//
+// NO SE CAMBIA NINGUNA PRIMARY KEY.
+//
+// ======================================================
+
+db.version(
+  4
+).stores({
+
+  gyms:
+    'id, gymCode, name, updatedAt, syncStatus',
+
+  gymUsers:
+    '[gymId+id], gymId, id, email, role, status, updatedAt, syncStatus, [gymId+email]',
+
+  members:
+    '[gymId+id], gymId, id, status, firstName, lastName, phone, updatedAt, syncStatus',
+
+  memberSubscriptions:
+    '[gymId+id], gymId, id, memberId, status, startDate, endDate, updatedAt, syncStatus, [gymId+memberId]',
+
+  memberPayments:
+    '[gymId+id], gymId, id, memberId, date, status, updatedAt, syncStatus, [gymId+memberId]',
+
+  attendance:
+    '[gymId+id], gymId, id, memberId, type, date, createdAt, syncStatus, [gymId+memberId]',
+
+  accessLogs:
+    '[gymId+id], gymId, id, memberId, method, status, createdAt, syncStatus, [gymId+memberId]',
+
+  visits:
+    '[gymId+id], gymId, id, status, createdAt, updatedAt, syncStatus',
+
+  visitAttendance:
+    '[gymId+id], gymId, id, visitId, visitorId, status, entryAt, exitAt, createdAt, updatedAt, syncStatus, [gymId+visitId]',
+
+  products:
+    '[gymId+id], gymId, id, name, sku, barcode, status, updatedAt, syncStatus',
+
+  inventoryMovements:
+    '[gymId+id], gymId, id, productId, type, referenceId, createdAt, updatedAt, syncStatus, [gymId+productId]',
+
+  sales:
+    '[gymId+id], gymId, id, cashShiftId, status, paymentMethod, createdAt, updatedAt, syncStatus, [gymId+cashShiftId]',
+
+  cashShifts:
+    '[gymId+id], gymId, id, status, openedAt, closedAt, updatedAt, syncStatus, [gymId+status]',
+
+  cashMovements:
+    '[gymId+id], gymId, id, shiftId, type, createdAt, updatedAt, syncStatus, [gymId+shiftId]',
+
+  blacklist:
+    '[gymId+id], gymId, id, memberId, createdAt, syncStatus, [gymId+memberId]',
+
+  gymSettings:
+    'gymId, updatedAt, syncStatus',
+
+  memberAccess:
+    '[gymId+id], gymId, id, memberId, type, updatedAt, syncStatus, [gymId+memberId]',
+
+  biometrics:
+    '[gymId+id], gymId, id, memberId, updatedAt, syncStatus, [gymId+memberId]',
+
+  supportTickets:
+    '[gymId+id], gymId, id, status, priority, createdAt, updatedAt, syncStatus',
+
+  syncQueue:
+    'id, gymId, entity, entityId, operation, status, createdAt, updatedAt, [gymId+status]',
 
   metadata:
     'key, updatedAt'
@@ -504,10 +631,6 @@ export const testNexgymDatabase =
           .toISOString();
 
 
-      // ==================================================
-      // ESCRIBIR
-      // ==================================================
-
       await db.metadata.put({
 
         key:
@@ -524,10 +647,6 @@ export const testNexgymDatabase =
 
       });
 
-
-      // ==================================================
-      // LEER
-      // ==================================================
 
       const record =
         await db.metadata.get(
@@ -546,10 +665,6 @@ export const testNexgymDatabase =
 
       }
 
-
-      // ==================================================
-      // BORRAR
-      // ==================================================
 
       await db.metadata.delete(
         testKey
@@ -671,10 +786,6 @@ export const testCompoundMemberKeys =
       };
 
 
-      // ==================================================
-      // GUARDAR
-      // ==================================================
-
       await db.members.put(
         memberA
       );
@@ -684,10 +795,6 @@ export const testCompoundMemberKeys =
         memberB
       );
 
-
-      // ==================================================
-      // LEER
-      // ==================================================
 
       const resultA =
         await db.members.get([
@@ -714,10 +821,6 @@ export const testCompoundMemberKeys =
 
       }
 
-
-      // ==================================================
-      // LIMPIAR
-      // ==================================================
 
       await db.members.delete([
         memberA.gymId,

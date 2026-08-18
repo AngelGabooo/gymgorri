@@ -1,5 +1,18 @@
 // src/utils/visitsStorage.js
 
+import {
+  getCurrentGymContext
+} from './memberId.js';
+
+import {
+  saveOfflineVisit
+} from '../offline/repositories/visitRepository.js';
+
+import {
+  saveOfflineVisitAttendance
+} from '../offline/repositories/visitAttendanceRepository.js';
+
+
 const VISITS_KEY =
   'gym_control_visits';
 
@@ -24,7 +37,9 @@ const readArray = (
 
 
     if (!raw) {
+
       return [];
+
     }
 
 
@@ -67,7 +82,9 @@ const saveArray = (
   localStorage.setItem(
     key,
     JSON.stringify(
-      Array.isArray(data)
+      Array.isArray(
+        data
+      )
         ? data
         : []
     )
@@ -91,14 +108,118 @@ const saveArray = (
 
 
 // ======================================================
-// OBTENER VISITAS
+// CONTEXTO
+// ======================================================
+
+const getVisitGymContext =
+  () => {
+
+    return getCurrentGymContext();
+
+  };
+
+
+// ======================================================
+// NORMALIZAR VISITA
+// ======================================================
+
+const normalizeVisitForCurrentGym = (
+  visit
+) => {
+
+  const {
+    gymId,
+    gymCode,
+    gymName
+  } =
+    getVisitGymContext();
+
+
+  if (!gymId) {
+
+    return {
+      ...visit
+    };
+
+  }
+
+
+  if (
+    visit?.gymId &&
+    visit.gymId !==
+      gymId
+  ) {
+
+    throw new Error(
+      'La visita pertenece a otro gimnasio.'
+    );
+
+  }
+
+
+  return {
+
+    ...visit,
+
+    gymId,
+
+    gymCode:
+      gymCode ||
+      visit?.gymCode ||
+      null,
+
+    gymName:
+      gymName ||
+      visit?.gymName ||
+      null
+
+  };
+
+};
+
+
+// ======================================================
+// TODAS LAS VISITAS SIN FILTRAR
+// ======================================================
+
+export const getAllStoredVisits =
+  () => {
+
+    return readArray(
+      VISITS_KEY
+    );
+
+  };
+
+
+// ======================================================
+// VISITAS DEL GYM ACTUAL
 // ======================================================
 
 export const getStoredVisits =
   () => {
 
-    return readArray(
-      VISITS_KEY
+    const visits =
+      getAllStoredVisits();
+
+
+    const {
+      gymId
+    } =
+      getVisitGymContext();
+
+
+    if (!gymId) {
+
+      return visits;
+
+    }
+
+
+    return visits.filter(
+      visit =>
+        visit?.gymId ===
+          gymId
     );
 
   };
@@ -123,46 +244,130 @@ export const saveVisit = (
   }
 
 
-  const visits =
-    getStoredVisits();
+  const normalizedVisit =
+    normalizeVisitForCurrentGym(
+      visit
+    );
+
+
+  const allVisits =
+    getAllStoredVisits();
+
+
+  const {
+    gymId
+  } =
+    getVisitGymContext();
 
 
   const index =
-    visits.findIndex(
-      item =>
-        item.id ===
-        visit.id
+    allVisits.findIndex(
+      item => {
+
+        if (gymId) {
+
+          return (
+            item.id ===
+              normalizedVisit.id &&
+            item.gymId ===
+              gymId
+          );
+
+        }
+
+
+        return (
+          item.id ===
+          normalizedVisit.id
+        );
+
+      }
     );
 
 
   if (
-    index >= 0
+    index >=
+    0
   ) {
 
-    visits[index] = {
+    allVisits[
+      index
+    ] = {
 
-      ...visits[index],
+      ...allVisits[
+        index
+      ],
 
-      ...visit
+      ...normalizedVisit
 
     };
 
   } else {
 
-    visits.push(
-      visit
+    allVisits.push(
+      normalizedVisit
     );
 
   }
 
 
+  // ====================================================
+  // LOCALSTORAGE
+  // ====================================================
+
   saveArray(
     VISITS_KEY,
-    visits
+    allVisits
   );
 
 
-  return visit;
+  // ====================================================
+  // INDEXEDDB + SYNCQUEUE
+  // ====================================================
+
+  if (
+    normalizedVisit.gymId
+  ) {
+
+    void saveOfflineVisit(
+      normalizedVisit
+    )
+      .then(
+        saved => {
+
+          console.log(
+            '✅ Visita respaldada en IndexedDB:',
+            {
+
+              gymId:
+                saved.gymId,
+
+              visitId:
+                saved.id,
+
+              syncStatus:
+                saved.syncStatus
+
+            }
+          );
+
+        }
+      )
+      .catch(
+        error => {
+
+          console.error(
+            '❌ No se pudo respaldar la visita en IndexedDB:',
+            error
+          );
+
+        }
+      );
+
+  }
+
+
+  return normalizedVisit;
 
 };
 
@@ -231,16 +436,14 @@ export const getVisitByQRToken = (
 
 
 // ======================================================
-// BUSCAR VISITA POR PIN HASH
+// BUSCAR VISITA POR PIN
 // ======================================================
 
 export const getVisitByPinHash = (
   pinHash
 ) => {
 
-  if (
-    !pinHash
-  ) {
+  if (!pinHash) {
 
     return null;
 
@@ -250,6 +453,7 @@ export const getVisitByPinHash = (
   return (
     getStoredVisits().find(
       visit =>
+
         visit
           ?.access
           ?.pin
@@ -275,7 +479,7 @@ export const getVisitByPinHash = (
 
 
 // ======================================================
-// OBTENER VISITAS CON BIOMETRÍA
+// VISITAS CON ROSTRO
 // ======================================================
 
 export const getVisitsWithFace =
@@ -283,6 +487,7 @@ export const getVisitsWithFace =
 
     return getStoredVisits().filter(
       visit =>
+
         visit
           ?.access
           ?.face
@@ -314,10 +519,10 @@ export const getVisitsWithFace =
 
 
 // ======================================================
-// OBTENER ASISTENCIAS DE VISITAS
+// TODAS LAS ASISTENCIAS SIN FILTRO
 // ======================================================
 
-export const getVisitAttendance =
+export const getAllVisitAttendance =
   () => {
 
     return readArray(
@@ -328,35 +533,130 @@ export const getVisitAttendance =
 
 
 // ======================================================
-// GUARDAR ASISTENCIAS DE VISITAS
+// ASISTENCIAS DEL GYM ACTUAL
+// ======================================================
+
+export const getVisitAttendance =
+  () => {
+
+    const records =
+      getAllVisitAttendance();
+
+
+    const {
+      gymId
+    } =
+      getVisitGymContext();
+
+
+    if (!gymId) {
+
+      return records;
+
+    }
+
+
+    return records.filter(
+      record =>
+        record?.gymId ===
+          gymId
+    );
+
+  };
+
+
+// ======================================================
+// GUARDAR ASISTENCIAS
 // ======================================================
 
 export const saveVisitAttendance = (
   records
 ) => {
 
+  const safeRecords =
+    Array.isArray(
+      records
+    )
+      ? records
+      : [];
+
+
+  const {
+    gymId
+  } =
+    getVisitGymContext();
+
+
+  // ====================================================
+  // LEGACY
+  // ====================================================
+
+  if (!gymId) {
+
+    saveArray(
+      VISIT_ATTENDANCE_KEY,
+      safeRecords
+    );
+
+
+    return safeRecords;
+
+  }
+
+
+  // ====================================================
+  // NO BORRAR REGISTROS DE OTROS GYMS
+  // ====================================================
+
+  const allRecords =
+    getAllVisitAttendance();
+
+
+  const otherGymRecords =
+    allRecords.filter(
+      record =>
+        record?.gymId !==
+          gymId
+    );
+
+
+  const normalized =
+    safeRecords.map(
+      record => ({
+
+        ...record,
+
+        gymId:
+          record.gymId ||
+          gymId
+
+      })
+    );
+
+
   saveArray(
     VISIT_ATTENDANCE_KEY,
-    records
+    [
+      ...otherGymRecords,
+      ...normalized
+    ]
   );
 
 
-  return records;
+  return normalized;
 
 };
 
 
 // ======================================================
-// BUSCAR ASISTENCIA ABIERTA
+// ASISTENCIA ABIERTA
 // ======================================================
 
 export const getOpenVisitAttendance = (
   visitId
 ) => {
 
-  if (
-    !visitId
-  ) {
+  if (!visitId) {
 
     return null;
 
@@ -389,7 +689,7 @@ export const getOpenVisitAttendance = (
 
 
 // ======================================================
-// CREAR ID DE ASISTENCIA
+// ID ASISTENCIA
 // ======================================================
 
 const createVisitAttendanceId =
@@ -418,7 +718,7 @@ const createVisitAttendanceId =
 
 
 // ======================================================
-// NOMBRE COMPLETO DE VISITA
+// NOMBRE
 // ======================================================
 
 const getVisitFullName = (
@@ -438,7 +738,7 @@ const getVisitFullName = (
 
 
 // ======================================================
-// REGISTRAR ENTRADA / SALIDA DE VISITA
+// REGISTRAR ENTRADA / SALIDA
 // ======================================================
 
 export const registerVisitMovement = ({
@@ -457,6 +757,12 @@ export const registerVisitMovement = ({
   }
 
 
+  const normalizedVisit =
+    normalizeVisitForCurrentGym(
+      visit
+    );
+
+
   const attendance =
     getVisitAttendance();
 
@@ -466,18 +772,26 @@ export const registerVisitMovement = ({
       .toISOString();
 
 
+  const {
+    gymId,
+    gymCode,
+    gymName
+  } =
+    getVisitGymContext();
+
+
   const openRecord =
     attendance.find(
       record =>
         (
           record.visitId ===
-            visit.id ||
+            normalizedVisit.id ||
 
           record.visitorId ===
-            visit.id ||
+            normalizedVisit.id ||
 
           record.memberId ===
-            visit.id
+            normalizedVisit.id
         ) &&
 
         record.status ===
@@ -520,6 +834,10 @@ export const registerVisitMovement = ({
           );
 
 
+    let updatedRecord =
+      null;
+
+
     const updatedAttendance =
       attendance.map(
         record => {
@@ -534,9 +852,24 @@ export const registerVisitMovement = ({
           }
 
 
-          return {
+          updatedRecord = {
 
             ...record,
+
+            gymId:
+              record.gymId ||
+              gymId ||
+              null,
+
+            gymCode:
+              record.gymCode ||
+              gymCode ||
+              null,
+
+            gymName:
+              record.gymName ||
+              gymName ||
+              null,
 
             exitAt:
               now,
@@ -554,6 +887,9 @@ export const registerVisitMovement = ({
 
           };
 
+
+          return updatedRecord;
+
         }
       );
 
@@ -565,7 +901,7 @@ export const registerVisitMovement = ({
 
     saveVisit({
 
-      ...visit,
+      ...normalizedVisit,
 
       isInside:
         false,
@@ -580,6 +916,37 @@ export const registerVisitMovement = ({
         now
 
     });
+
+
+    if (
+      updatedRecord?.gymId
+    ) {
+
+      void saveOfflineVisitAttendance(
+        updatedRecord
+      )
+        .then(
+          saved => {
+
+            console.log(
+              '✅ Salida de visita respaldada offline:',
+              saved
+            );
+
+          }
+        )
+        .catch(
+          error => {
+
+            console.error(
+              '❌ Error respaldando salida de visita:',
+              error
+            );
+
+          }
+        );
+
+    }
 
 
     return {
@@ -609,30 +976,48 @@ export const registerVisitMovement = ({
     id:
       createVisitAttendanceId(),
 
+    gymId:
+      gymId ||
+      normalizedVisit.gymId ||
+      null,
+
+    gymCode:
+      gymCode ||
+      normalizedVisit.gymCode ||
+      null,
+
+    gymName:
+      gymName ||
+      normalizedVisit.gymName ||
+      null,
+
     visitId:
-      visit.id,
+      normalizedVisit.id,
 
     visitorId:
-      visit.id,
+      normalizedVisit.id,
+
+    memberId:
+      normalizedVisit.id,
 
     visitName:
       getVisitFullName(
-        visit
+        normalizedVisit
       ),
 
     visitorName:
       getVisitFullName(
-        visit
+        normalizedVisit
       ),
 
     memberName:
       getVisitFullName(
-        visit
+        normalizedVisit
       ),
 
     profilePhoto:
-      visit.profilePhoto ||
-      visit.profilePhotoUrl ||
+      normalizedVisit.profilePhoto ||
+      normalizedVisit.profilePhotoUrl ||
       null,
 
     method,
@@ -676,7 +1061,7 @@ export const registerVisitMovement = ({
 
   saveVisit({
 
-    ...visit,
+    ...normalizedVisit,
 
     isInside:
       true,
@@ -691,6 +1076,37 @@ export const registerVisitMovement = ({
       now
 
   });
+
+
+  if (
+    attendanceRecord.gymId
+  ) {
+
+    void saveOfflineVisitAttendance(
+      attendanceRecord
+    )
+      .then(
+        saved => {
+
+          console.log(
+            '✅ Entrada de visita respaldada offline:',
+            saved
+          );
+
+        }
+      )
+      .catch(
+        error => {
+
+          console.error(
+            '❌ Error respaldando entrada de visita:',
+            error
+          );
+
+        }
+      );
+
+  }
 
 
   return {
@@ -773,7 +1189,7 @@ export const createVisitId =
 
 
 // ======================================================
-// TOKEN QR DE VISITA
+// TOKEN QR
 // ======================================================
 
 export const createVisitToken =
@@ -801,7 +1217,7 @@ export const createVisitToken =
 
 
 // ======================================================
-// ID BIOMÉTRICO DE VISITA
+// ID FACIAL
 // ======================================================
 
 export const createVisitFaceId =

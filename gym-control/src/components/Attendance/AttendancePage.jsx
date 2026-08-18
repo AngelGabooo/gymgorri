@@ -31,7 +31,8 @@ import Header from '../Layout/Header';
 import AttendanceStatCard from './Cards/AttendanceStatCard';
 
 import {
-  getMemberById
+  getMemberById,
+  getCurrentGymContext
 } from '../../utils/memberId';
 
 import {
@@ -64,16 +65,88 @@ const getStoredAttendance = () => {
         ATTENDANCE_KEY
       );
 
+
     if (!raw) {
+
       return [];
+
     }
 
-    const parsed =
-      JSON.parse(raw);
 
-    return Array.isArray(parsed)
-      ? parsed
-      : [];
+    const parsed =
+      JSON.parse(
+        raw
+      );
+
+
+    const records =
+      Array.isArray(
+        parsed
+      )
+        ? parsed
+        : [];
+
+
+    const {
+      gymId
+    } =
+      getCurrentGymContext();
+
+
+    // ====================================================
+    // MODO LEGACY
+    // ====================================================
+
+    if (!gymId) {
+
+      return records;
+
+    }
+
+
+    // ====================================================
+    // FILTRAR POR GIMNASIO
+    // ====================================================
+    //
+    // Los registros nuevos siempre tendrán gymId.
+    //
+    // Para registros antiguos sin gymId comprobamos si el
+    // memberId pertenece al gimnasio actualmente abierto.
+    //
+    // ====================================================
+
+    return records.filter(
+      record => {
+
+        if (
+          record?.gymId
+        ) {
+
+          return (
+            record.gymId ===
+            gymId
+          );
+
+        }
+
+
+        if (
+          !record?.memberId
+        ) {
+
+          return false;
+
+        }
+
+
+        return Boolean(
+          getMemberById(
+            record.memberId
+          )
+        );
+
+      }
+    );
 
   } catch (error) {
 
@@ -81,6 +154,7 @@ const getStoredAttendance = () => {
       'Error leyendo asistencias:',
       error
     );
+
 
     return [];
 

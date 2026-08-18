@@ -1,14 +1,23 @@
 // src/utils/accessEvidence.js
 
+import {
+  getCurrentGymContext
+} from './memberId.js';
+
+import {
+  saveOfflineAccessLog
+} from '../offline/repositories/accessLogRepository.js';
+
+
 export const ACCESS_LOG_KEY =
   'gym_control_access_logs';
 
 
 // ======================================================
-// LEER LOGS DE ACCESO
+// LEER TODOS LOS LOGS
 // ======================================================
 
-export const getAccessLogs = () => {
+const getAllAccessLogs = () => {
 
   try {
 
@@ -17,14 +26,19 @@ export const getAccessLogs = () => {
         ACCESS_LOG_KEY
       );
 
+
     if (!raw) {
+
       return [];
+
     }
+
 
     const parsed =
       JSON.parse(
         raw
       );
+
 
     return Array.isArray(
       parsed
@@ -39,9 +53,43 @@ export const getAccessLogs = () => {
       error
     );
 
+
     return [];
 
   }
+
+};
+
+
+// ======================================================
+// LEER LOGS DEL GIMNASIO ACTUAL
+// ======================================================
+
+export const getAccessLogs = () => {
+
+  const records =
+    getAllAccessLogs();
+
+
+  const {
+    gymId
+  } =
+    getCurrentGymContext();
+
+
+  if (!gymId) {
+
+    return records;
+
+  }
+
+
+  return records.filter(
+    record =>
+      record?.gymId ===
+        gymId ||
+      !record?.gymId
+  );
 
 };
 
@@ -55,15 +103,28 @@ export const addAccessLog = (
 ) => {
 
   if (!record) {
+
     return null;
+
   }
 
+
   const records =
-    getAccessLogs();
+    getAllAccessLogs();
+
+
+  const {
+    gymId,
+    gymCode,
+    gymName
+  } =
+    getCurrentGymContext();
+
 
   const now =
     new Date()
       .toISOString();
+
 
   const id =
     window.crypto?.randomUUID
@@ -72,19 +133,43 @@ export const addAccessLog = (
           .toString(36)
           .substring(2, 8)}`;
 
+
   const entry = {
+
     id,
 
     ...record,
 
+    gymId:
+      record.gymId ||
+      gymId ||
+      null,
+
+    gymCode:
+      record.gymCode ||
+      gymCode ||
+      null,
+
+    gymName:
+      record.gymName ||
+      gymName ||
+      null,
+
     createdAt:
       record.createdAt ||
+      now,
+
+    updatedAt:
+      record.updatedAt ||
       now
+
   };
+
 
   records.unshift(
     entry
   );
+
 
   // Conservamos una cantidad razonable mientras
   // el sistema siga trabajando con localStorage.
@@ -94,6 +179,7 @@ export const addAccessLog = (
       800
     );
 
+
   localStorage.setItem(
     ACCESS_LOG_KEY,
     JSON.stringify(
@@ -101,11 +187,73 @@ export const addAccessLog = (
     )
   );
 
+
   window.dispatchEvent(
     new Event(
       'gym-storage-update'
     )
   );
+
+
+  window.dispatchEvent(
+    new Event(
+      'gym-access-log-update'
+    )
+  );
+
+
+  // ====================================================
+  // INDEXEDDB + SYNCQUEUE
+  // ====================================================
+
+  if (
+    entry.gymId
+  ) {
+
+    void saveOfflineAccessLog(
+      entry
+    )
+      .then(
+        offlineRecord => {
+
+          console.log(
+            '✅ Log de acceso respaldado en IndexedDB:',
+            {
+              gymId:
+                offlineRecord.gymId,
+
+              accessLogId:
+                offlineRecord.id,
+
+              result:
+                offlineRecord.result,
+
+              syncStatus:
+                offlineRecord.syncStatus
+            }
+          );
+
+        }
+      )
+      .catch(
+        error => {
+
+          console.error(
+            '❌ No se pudo respaldar el log de acceso en IndexedDB:',
+            error
+          );
+
+        }
+      );
+
+  } else {
+
+    console.warn(
+      '⚠️ Log de acceso guardado en modo legacy; no tiene gymId.'
+    );
+
+  }
+
 
   return entry;
 
@@ -127,6 +275,7 @@ export const captureVideoEvidence = (
     quality = 0.62
   } = options;
 
+
   if (
     !video ||
     video.readyState <
@@ -139,6 +288,7 @@ export const captureVideoEvidence = (
 
   }
 
+
   try {
 
     const canvas =
@@ -146,40 +296,53 @@ export const captureVideoEvidence = (
         'canvas'
       );
 
+
     canvas.width =
       width;
 
+
     canvas.height =
       height;
+
 
     const context =
       canvas.getContext(
         '2d'
       );
 
+
     if (!context) {
+
       return null;
+
     }
+
 
     const sourceRatio =
       video.videoWidth /
       video.videoHeight;
 
+
     const targetRatio =
       width /
       height;
 
+
     let sourceWidth =
       video.videoWidth;
+
 
     let sourceHeight =
       video.videoHeight;
 
+
     let sourceX =
       0;
 
+
     let sourceY =
       0;
+
 
     if (
       sourceRatio >
@@ -189,6 +352,7 @@ export const captureVideoEvidence = (
       sourceWidth =
         video.videoHeight *
         targetRatio;
+
 
       sourceX =
         (
@@ -203,6 +367,7 @@ export const captureVideoEvidence = (
         video.videoWidth /
         targetRatio;
 
+
       sourceY =
         (
           video.videoHeight -
@@ -211,6 +376,7 @@ export const captureVideoEvidence = (
         2;
 
     }
+
 
     context.drawImage(
       video,
@@ -224,6 +390,7 @@ export const captureVideoEvidence = (
       height
     );
 
+
     return canvas.toDataURL(
       'image/jpeg',
       quality
@@ -235,6 +402,7 @@ export const captureVideoEvidence = (
       'Error capturando evidencia:',
       error
     );
+
 
     return null;
 
@@ -257,39 +425,64 @@ export const openTemporaryCamera = async (
     idealHeight = 480
   } = options;
 
+
+  if (
+    !navigator.mediaDevices?.getUserMedia
+  ) {
+
+    throw new Error(
+      'Este dispositivo no permite utilizar la cámara.'
+    );
+
+  }
+
+
   const stream =
     await navigator.mediaDevices.getUserMedia({
+
       video: {
+
         facingMode,
+
         width: {
           ideal:
             idealWidth
         },
+
         height: {
           ideal:
             idealHeight
         }
+
       },
+
       audio:
         false
+
     });
+
 
   const video =
     document.createElement(
       'video'
     );
 
+
   video.autoplay =
     true;
+
 
   video.muted =
     true;
 
+
   video.playsInline =
     true;
 
+
   video.srcObject =
     stream;
+
 
   await new Promise(
     (
@@ -308,6 +501,7 @@ export const openTemporaryCamera = async (
           7000
         );
 
+
       const ready =
         async () => {
 
@@ -315,11 +509,12 @@ export const openTemporaryCamera = async (
 
             await video.play();
 
+
             clearTimeout(
               timeout
             );
 
-            // Permitimos que lleguen algunos cuadros reales.
+
             setTimeout(
               resolve,
               350
@@ -331,6 +526,7 @@ export const openTemporaryCamera = async (
               timeout
             );
 
+
             reject(
               error
             );
@@ -338,6 +534,7 @@ export const openTemporaryCamera = async (
           }
 
         };
+
 
       if (
         video.readyState >=
@@ -356,6 +553,7 @@ export const openTemporaryCamera = async (
     }
   );
 
+
   const stop =
     () => {
 
@@ -366,10 +564,12 @@ export const openTemporaryCamera = async (
             track.stop()
         );
 
+
       video.srcObject =
         null;
 
     };
+
 
   return {
     stream,
@@ -380,10 +580,20 @@ export const openTemporaryCamera = async (
 };
 
 
+// ======================================================
+// EXPORT
+// ======================================================
+
 export default {
+
   ACCESS_LOG_KEY,
+
   getAccessLogs,
+
   addAccessLog,
+
   captureVideoEvidence,
+
   openTemporaryCamera
+
 };

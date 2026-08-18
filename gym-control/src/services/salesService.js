@@ -2,491 +2,619 @@
 
 import {
   getProductById
-} from './productService';
+} from './productService.js';
 
 import {
   registerInventoryMovement
-} from './inventoryService';
+} from './inventoryService.js';
 
 import {
   getOpenCashShiftForCurrentUser
-} from './cashService';
+} from './cashService.js';
+
+import {
+  getCurrentGymContext
+} from '../utils/memberId.js';
+
+import {
+  saveOfflineSale
+} from '../offline/repositories/saleRepository.js';
+
+
+// ======================================================
+// STORAGE
+// ======================================================
 
 export const SALES_KEY =
   'gym_control_sales';
 
 
-const getSession = () => {
-  try {
-    const raw =
-      localStorage.getItem(
-        'gym_control_session'
+// ======================================================
+// SESIÓN
+// ======================================================
+
+const getSession =
+  () => {
+
+    try {
+
+      const raw =
+        localStorage.getItem(
+          'gym_control_session'
+        );
+
+
+      return raw
+        ? JSON.parse(
+            raw
+          )
+        : null;
+
+    } catch (error) {
+
+      console.error(
+        'Error leyendo sesión para ventas:',
+        error
       );
 
-    return raw
-      ? JSON.parse(
-          raw
-        )
-      : null;
 
-  } catch {
-    return null;
-  }
-};
+      return null;
 
-
-const createId = (
-  prefix = 'SALE'
-) => {
-
-  if (
-    window.crypto?.randomUUID
-  ) {
-
-    return `${prefix}-${window.crypto.randomUUID()}`;
-
-  }
-
-  return `${prefix}-${Date.now()}-${Math.random()
-    .toString(36)
-    .substring(2, 8)}`;
-
-};
-
-
-export const getSales = () => {
-  try {
-    const raw =
-      localStorage.getItem(
-        SALES_KEY
-      );
-
-    if (!raw) {
-      return [];
     }
 
-    const parsed =
-      JSON.parse(
-        raw
+  };
+
+
+// ======================================================
+// CONTEXTO DEL GYM
+// ======================================================
+
+const getSalesGymContext =
+  () => {
+
+    try {
+
+      return (
+        getCurrentGymContext() ||
+        {}
       );
 
-    return Array.isArray(
-      parsed
-    )
-      ? parsed
-      : [];
+    } catch (error) {
 
-  } catch (error) {
+      console.error(
+        'Error obteniendo contexto del gimnasio para ventas:',
+        error
+      );
 
-    console.error(
-      'Error leyendo ventas:',
-      error
+
+      return {};
+
+    }
+
+  };
+
+
+// ======================================================
+// CREAR ID
+// ======================================================
+
+const createId =
+  (
+    prefix = 'SALE'
+  ) => {
+
+    if (
+      window.crypto?.randomUUID
+    ) {
+
+      return `${prefix}-${window.crypto.randomUUID()}`;
+
+    }
+
+
+    return (
+      `${prefix}-${Date.now()}-` +
+      Math.random()
+        .toString(36)
+        .substring(
+          2,
+          8
+        )
     );
 
-    return [];
-
-  }
-};
+  };
 
 
-const saveSales = (
-  sales
-) => {
+// ======================================================
+// LEER TODAS SIN FILTRAR
+// ======================================================
+//
+// SOLO LECTURA.
+//
+// ======================================================
 
-  localStorage.setItem(
-    SALES_KEY,
-    JSON.stringify(
-      Array.isArray(
-        sales
-      )
-        ? sales
-        : []
-    )
-  );
+export const getAllStoredSales =
+  () => {
 
-  window.dispatchEvent(
-    new Event(
-      'gym-storage-update'
-    )
-  );
+    try {
 
-  window.dispatchEvent(
-    new Event(
-      'gym-sales-update'
-    )
-  );
-
-  window.dispatchEvent(
-    new Event(
-      'gym-cash-update'
-    )
-  );
-
-};
+      const raw =
+        localStorage.getItem(
+          SALES_KEY
+        );
 
 
-export const createSale = ({
-  items,
-  customer = null,
-  paymentMethod = 'efectivo',
-  received = 0,
-  reference = '',
-  notes = '',
-  discount = 0
-}) => {
+      if (
+        !raw
+      ) {
 
-  if (
-    !Array.isArray(
-      items
-    ) ||
-    items.length ===
-      0
-  ) {
-
-    throw new Error(
-      'Agrega al menos un producto al carrito.'
-    );
-
-  }
-
-
-  const session =
-    getSession();
-
-
-  if (
-    !session?.id
-  ) {
-
-    throw new Error(
-      'No existe una sesión válida para registrar la venta.'
-    );
-
-  }
-
-
-  const openCashShift =
-    getOpenCashShiftForCurrentUser();
-
-
-  if (
-    !openCashShift
-  ) {
-
-    throw new Error(
-      'Debes abrir tu turno de caja antes de registrar una venta.'
-    );
-
-  }
-
-
-  const normalizedItems =
-    items.map(
-      item => {
-
-        const product =
-          getProductById(
-            item.productId
-          );
-
-
-        if (!product) {
-
-          throw new Error(
-            `No se encontró el producto ${item.productId}.`
-          );
-
-        }
-
-
-        if (
-          product.status ===
-          'inactive'
-        ) {
-
-          throw new Error(
-            `${product.name} está desactivado.`
-          );
-
-        }
-
-
-        const quantity =
-          Number(
-            item.quantity ||
-            0
-          );
-
-
-        if (
-          !Number.isFinite(
-            quantity
-          ) ||
-          quantity <=
-            0
-        ) {
-
-          throw new Error(
-            `Cantidad inválida para ${product.name}.`
-          );
-
-        }
-
-
-        if (
-          quantity >
-          Number(
-            product.stock ||
-            0
-          )
-        ) {
-
-          throw new Error(
-            `Stock insuficiente de ${product.name}. Disponible: ${product.stock || 0}.`
-          );
-
-        }
-
-
-        const unitPrice =
-          Number(
-            item.unitPrice ??
-            product.price ??
-            0
-          );
-
-
-        const unitCost =
-          Number(
-            product.cost ||
-            0
-          );
-
-
-        const subtotal =
-          unitPrice *
-          quantity;
-
-
-        return {
-          productId:
-            product.id,
-
-          name:
-            product.name,
-
-          category:
-            product.category ||
-            'Otros',
-
-          sku:
-            product.sku ||
-            '',
-
-          barcode:
-            product.barcode ||
-            '',
-
-          quantity,
-
-          unitPrice,
-
-          unitCost,
-
-          subtotal
-        };
+        return [];
 
       }
-    );
 
 
-  const subtotal =
-    normalizedItems.reduce(
-      (
-        sum,
-        item
-      ) =>
-        sum +
-        Number(
-          item.subtotal ||
-          0
-        ),
-      0
-    );
+      const parsed =
+        JSON.parse(
+          raw
+        );
 
 
-  const discountAmount =
-    Math.max(
-      0,
-      Math.min(
-        Number(
-          discount ||
-          0
-        ),
-        subtotal
+      return Array.isArray(
+        parsed
+      )
+        ? parsed
+        : [];
+
+    } catch (error) {
+
+      console.error(
+        'Error leyendo ventas:',
+        error
+      );
+
+
+      return [];
+
+    }
+
+  };
+
+
+// ======================================================
+// GUARDAR VENTAS
+// ======================================================
+
+const saveSales =
+  (
+    sales
+  ) => {
+
+    localStorage.setItem(
+      SALES_KEY,
+      JSON.stringify(
+        Array.isArray(
+          sales
+        )
+          ? sales
+          : []
       )
     );
 
 
-  const total =
-    Math.max(
-      0,
-      subtotal -
-      discountAmount
+    window.dispatchEvent(
+      new Event(
+        'gym-storage-update'
+      )
     );
 
 
-  const receivedAmount =
-    paymentMethod ===
-      'efectivo'
-      ? Number(
-          received ||
-          0
-        )
-      : total;
-
-
-  if (
-    paymentMethod ===
-      'efectivo' &&
-    receivedAmount <
-      total
-  ) {
-
-    throw new Error(
-      'El efectivo recibido es menor al total de la venta.'
-    );
-
-  }
-
-
-  const change =
-    paymentMethod ===
-      'efectivo'
-      ? Math.max(
-          0,
-          receivedAmount -
-          total
-        )
-      : 0;
-
-
-  const now =
-    new Date()
-      .toISOString();
-
-
-  const saleId =
-    createId(
-      'SALE'
+    window.dispatchEvent(
+      new Event(
+        'gym-sales-update'
+      )
     );
 
 
-  normalizedItems.forEach(
-    item => {
+    window.dispatchEvent(
+      new Event(
+        'gym-cash-update'
+      )
+    );
 
-      registerInventoryMovement({
-        productId:
-          item.productId,
+  };
 
-        type:
-          'sale',
 
-        quantity:
-          item.quantity,
+// ======================================================
+// VENTAS DEL GIMNASIO ACTUAL
+// ======================================================
+//
+// SOLO LECTURA.
+//
+// Esta función ya no migra datos,
+// no escribe localStorage
+// y no dispara eventos.
+//
+// ======================================================
 
-        reason:
-          `Venta ${saleId}`,
+export const getSales =
+  () => {
 
-        referenceId:
-          saleId,
+    const sales =
+      getAllStoredSales();
 
-        actor:
-          session
-      });
+
+    const {
+      gymId
+    } =
+      getSalesGymContext();
+
+
+    if (
+      !gymId
+    ) {
+
+      return sales;
 
     }
-  );
 
 
-  const estimatedCost =
-    normalizedItems.reduce(
-      (
-        sum,
-        item
-      ) =>
-        sum +
-        Number(
-          item.unitCost ||
-          0
-        ) *
-        Number(
-          item.quantity ||
-          0
-        ),
-      0
+    return sales.filter(
+      sale =>
+        !sale?.gymId ||
+        sale.gymId ===
+          gymId
     );
 
+  };
 
-  const sale = {
 
-    id:
-      saleId,
+// ======================================================
+// VENTA POR ID
+// ======================================================
 
-    folio:
-      `VTA-${String(
-        Date.now()
-      ).slice(
-        -8
-      )}`,
+export const getSaleById =
+  (
+    saleId
+  ) => {
 
-    cashShiftId:
-      openCashShift.id,
+    if (
+      !saleId
+    ) {
 
-    cashEmployeeId:
-      openCashShift.employee?.id ||
-      session.id,
+      return null;
 
-    customer:
-      customer
-        ? {
-            type:
-              customer.type ||
-              'member',
+    }
 
-            memberId:
-              customer.memberId ||
-              customer.id ||
-              '',
 
-            memberName:
-              customer.memberName ||
-              `${customer.firstName || ''} ${customer.lastName || ''}`
-                .trim() ||
-              'Miembro',
+    return (
+      getSales().find(
+        sale =>
+          sale.id ===
+          saleId
+      ) ||
+      null
+    );
 
-            phone:
-              customer.phone ||
-              ''
+  };
+
+
+// ======================================================
+// NORMALIZAR ACTOR
+// ======================================================
+
+const normalizeActor =
+  (
+    actor
+  ) => {
+
+    if (
+      !actor
+    ) {
+
+      return null;
+
+    }
+
+
+    return {
+
+      id:
+        actor.id ||
+        actor.userId ||
+        null,
+
+      name:
+        actor.name ||
+        actor.fullName ||
+        actor.email ||
+        'Usuario',
+
+      email:
+        actor.email ||
+        '',
+
+      role:
+        actor.role ||
+        ''
+
+    };
+
+  };
+
+
+// ======================================================
+// CREAR VENTA
+// ======================================================
+
+export const createSale =
+  ({
+    items,
+    customer = null,
+    paymentMethod = 'efectivo',
+    received = 0,
+    reference = '',
+    notes = '',
+    discount = 0
+  }) => {
+
+    // ==================================================
+    // VALIDAR CARRITO
+    // ==================================================
+
+    if (
+      !Array.isArray(
+        items
+      ) ||
+      items.length ===
+        0
+    ) {
+
+      throw new Error(
+        'Agrega al menos un producto al carrito.'
+      );
+
+    }
+
+
+    // ==================================================
+    // SESIÓN
+    // ==================================================
+
+    const session =
+      getSession();
+
+
+    if (
+      !session?.id
+    ) {
+
+      throw new Error(
+        'No existe una sesión válida para registrar la venta.'
+      );
+
+    }
+
+
+    // ==================================================
+    // GIMNASIO
+    // ==================================================
+
+    const {
+      gymId,
+      gymCode,
+      gymName
+    } =
+      getSalesGymContext();
+
+
+    if (
+      !gymId
+    ) {
+
+      throw new Error(
+        'No se pudo determinar el gimnasio actual.'
+      );
+
+    }
+
+
+    // ==================================================
+    // TURNO DE CAJA
+    // ==================================================
+
+    const openCashShift =
+      getOpenCashShiftForCurrentUser();
+
+
+    if (
+      !openCashShift
+    ) {
+
+      throw new Error(
+        'Debes abrir tu turno de caja antes de registrar una venta.'
+      );
+
+    }
+
+
+    if (
+      openCashShift.gymId &&
+      openCashShift.gymId !==
+        gymId
+    ) {
+
+      throw new Error(
+        'El turno de caja pertenece a otro gimnasio.'
+      );
+
+    }
+
+
+    // ==================================================
+    // NORMALIZAR PRODUCTOS
+    // ==================================================
+
+    const normalizedItems =
+      items.map(
+        item => {
+
+          const product =
+            getProductById(
+              item.productId
+            );
+
+
+          if (
+            !product
+          ) {
+
+            throw new Error(
+              `No se encontró el producto ${item.productId}.`
+            );
+
           }
-        : {
-            type:
-              'general',
 
-            memberId:
+
+          if (
+            product.gymId &&
+            product.gymId !==
+              gymId
+          ) {
+
+            throw new Error(
+              `${product.name} pertenece a otro gimnasio.`
+            );
+
+          }
+
+
+          if (
+            product.status ===
+            'inactive'
+          ) {
+
+            throw new Error(
+              `${product.name} está desactivado.`
+            );
+
+          }
+
+
+          const quantity =
+            Number(
+              item.quantity ||
+              0
+            );
+
+
+          if (
+            !Number.isFinite(
+              quantity
+            ) ||
+            quantity <=
+              0
+          ) {
+
+            throw new Error(
+              `Cantidad inválida para ${product.name}.`
+            );
+
+          }
+
+
+          const availableStock =
+            Number(
+              product.stock ||
+              0
+            );
+
+
+          if (
+            quantity >
+            availableStock
+          ) {
+
+            throw new Error(
+              `Stock insuficiente de ${product.name}. Disponible: ${availableStock}.`
+            );
+
+          }
+
+
+          const unitPrice =
+            Number(
+              item.unitPrice ??
+              product.price ??
+              0
+            );
+
+
+          const unitCost =
+            Number(
+              product.cost ||
+              0
+            );
+
+
+          if (
+            !Number.isFinite(
+              unitPrice
+            ) ||
+            unitPrice <
+              0
+          ) {
+
+            throw new Error(
+              `Precio inválido para ${product.name}.`
+            );
+
+          }
+
+
+          const subtotal =
+            unitPrice *
+            quantity;
+
+
+          return {
+
+            productId:
+              product.id,
+
+            name:
+              product.name,
+
+            category:
+              product.category ||
+              'Otros',
+
+            sku:
+              product.sku ||
               '',
 
-            memberName:
-              'Venta general',
+            barcode:
+              product.barcode ||
+              '',
 
-            phone:
-              ''
-          },
+            quantity,
 
-    items:
-      normalizedItems,
+            unitPrice,
 
-    itemCount:
+            unitCost,
+
+            subtotal
+
+          };
+
+        }
+      );
+
+
+    // ==================================================
+    // SUBTOTAL
+    // ==================================================
+
+    const subtotal =
       normalizedItems.reduce(
         (
           sum,
@@ -494,393 +622,817 @@ export const createSale = ({
         ) =>
           sum +
           Number(
-            item.quantity ||
+            item.subtotal ||
             0
           ),
         0
-      ),
+      );
 
-    subtotal,
 
-    discount:
-      discountAmount,
+    // ==================================================
+    // DESCUENTO
+    // ==================================================
 
-    total,
+    const numericDiscount =
+      Number(
+        discount ||
+        0
+      );
 
-    estimatedCost,
 
-    estimatedProfit:
-      total -
-      estimatedCost,
+    const discountAmount =
+      Math.max(
+        0,
+        Math.min(
+          Number.isFinite(
+            numericDiscount
+          )
+            ? numericDiscount
+            : 0,
+          subtotal
+        )
+      );
 
-    paymentMethod,
 
-    received:
-      receivedAmount,
+    // ==================================================
+    // TOTAL
+    // ==================================================
 
-    change,
+    const total =
+      Math.max(
+        0,
+        subtotal -
+        discountAmount
+      );
 
-    reference:
+
+    // ==================================================
+    // MÉTODO DE PAGO
+    // ==================================================
+
+    const normalizedMethod =
       String(
-        reference ||
-        ''
-      ).trim(),
-
-    notes:
-      String(
-        notes ||
-        ''
-      ).trim(),
-
-    status:
-      'completed',
-
-    createdAt:
-      now,
-
-    createdBy:
-      {
-        id:
-          session.id ||
-          null,
-
-        name:
-          session.name ||
-          session.email ||
-          'Usuario',
-
-        email:
-          session.email ||
-          '',
-
-        role:
-          session.role ||
-          ''
-      }
-  };
+        paymentMethod ||
+        'efectivo'
+      )
+        .trim()
+        .toLowerCase();
 
 
-  const sales =
-    getSales();
-
-  sales.unshift(
-    sale
-  );
-
-  saveSales(
-    sales
-  );
+    const receivedAmount =
+      normalizedMethod ===
+        'efectivo'
+        ? Number(
+            received ||
+            0
+          )
+        : total;
 
 
-  return sale;
+    if (
+      normalizedMethod ===
+        'efectivo' &&
+      (
+        !Number.isFinite(
+          receivedAmount
+        ) ||
+        receivedAmount <
+          total
+      )
+    ) {
 
-};
-
-
-export const cancelSale = (
-  saleId,
-  reason = ''
-) => {
-
-  const sales =
-    getSales();
-
-
-  const index =
-    sales.findIndex(
-      item =>
-        item.id ===
-        saleId
-    );
-
-
-  if (
-    index <
-    0
-  ) {
-
-    throw new Error(
-      'No se encontró la venta.'
-    );
-
-  }
-
-
-  if (
-    sales[
-      index
-    ].status ===
-    'cancelled'
-  ) {
-
-    return sales[
-      index
-    ];
-
-  }
-
-
-  const session =
-    getSession();
-
-
-  sales[
-    index
-  ].items.forEach(
-    item => {
-
-      registerInventoryMovement({
-        productId:
-          item.productId,
-
-        type:
-          'return',
-
-        quantity:
-          item.quantity,
-
-        reason:
-          `Cancelación de ${sales[index].folio}`,
-
-        referenceId:
-          saleId,
-
-        actor:
-          session
-      });
+      throw new Error(
+        'El efectivo recibido es menor al total de la venta.'
+      );
 
     }
-  );
 
 
-  sales[
-    index
-  ] = {
+    // ==================================================
+    // CAMBIO
+    // ==================================================
 
-    ...sales[
-      index
-    ],
+    const change =
+      normalizedMethod ===
+        'efectivo'
+        ? Math.max(
+            0,
+            receivedAmount -
+            total
+          )
+        : 0;
 
-    status:
-      'cancelled',
 
-    cancelledAt:
+    // ==================================================
+    // ID / FECHA
+    // ==================================================
+
+    const now =
       new Date()
-        .toISOString(),
-
-    cancellationReason:
-      String(
-        reason ||
-        ''
-      ).trim(),
-
-    cancelledBy:
-      session
-        ? {
-            id:
-              session.id ||
-              null,
-
-            name:
-              session.name ||
-              session.email ||
-              'Usuario',
-
-            email:
-              session.email ||
-              '',
-
-            role:
-              session.role ||
-              ''
-          }
-        : null
-  };
+        .toISOString();
 
 
-  saveSales(
-    sales
-  );
+    const saleId =
+      createId(
+        'SALE'
+      );
 
 
-  return sales[
-    index
-  ];
+    // ==================================================
+    // DESCONTAR INVENTARIO
+    // ==================================================
+    //
+    // Esto genera:
+    //
+    // product UPDATE
+    // inventory_movement CREATE
+    // IndexedDB
+    // syncQueue
+    //
+    // ==================================================
 
-};
+    normalizedItems.forEach(
+      item => {
 
+        registerInventoryMovement({
 
-export const getSalesSummary = (
-  sales =
-    getSales()
-) => {
+          productId:
+            item.productId,
 
-  const completed =
-    sales.filter(
-      item =>
-        item.status !==
-        'cancelled'
+          type:
+            'sale',
+
+          quantity:
+            item.quantity,
+
+          reason:
+            `Venta ${saleId}`,
+
+          referenceId:
+            saleId,
+
+          actor:
+            session
+
+        });
+
+      }
     );
 
 
-  const today =
-    new Date();
+    // ==================================================
+    // COSTO ESTIMADO
+    // ==================================================
 
-
-  const isToday =
-    value => {
-
-      const date =
-        new Date(
-          value
-        );
-
-
-      return (
-        !Number.isNaN(
-          date.getTime()
-        ) &&
-        date.getDate() ===
-          today.getDate() &&
-        date.getMonth() ===
-          today.getMonth() &&
-        date.getFullYear() ===
-          today.getFullYear()
+    const estimatedCost =
+      normalizedItems.reduce(
+        (
+          sum,
+          item
+        ) =>
+          sum +
+          (
+            Number(
+              item.unitCost ||
+              0
+            ) *
+            Number(
+              item.quantity ||
+              0
+            )
+          ),
+        0
       );
+
+
+    // ==================================================
+    // VENTA
+    // ==================================================
+
+    const sale = {
+
+      id:
+        saleId,
+
+      gymId,
+
+      gymCode:
+        gymCode ||
+        null,
+
+      gymName:
+        gymName ||
+        null,
+
+      folio:
+        `VTA-${String(
+          Date.now()
+        ).slice(
+          -8
+        )}`,
+
+      cashShiftId:
+        openCashShift.id,
+
+      cashEmployeeId:
+        openCashShift.employee?.id ||
+        session.id,
+
+      customer:
+        customer
+          ? {
+
+              type:
+                customer.type ||
+                'member',
+
+              memberId:
+                customer.memberId ||
+                customer.id ||
+                '',
+
+              memberName:
+                customer.memberName ||
+                `${customer.firstName || ''} ${customer.lastName || ''}`
+                  .trim() ||
+                'Miembro',
+
+              phone:
+                customer.phone ||
+                ''
+
+            }
+          : {
+
+              type:
+                'general',
+
+              memberId:
+                '',
+
+              memberName:
+                'Venta general',
+
+              phone:
+                ''
+
+            },
+
+      items:
+        normalizedItems,
+
+      itemCount:
+        normalizedItems.reduce(
+          (
+            sum,
+            item
+          ) =>
+            sum +
+            Number(
+              item.quantity ||
+              0
+            ),
+          0
+        ),
+
+      subtotal,
+
+      discount:
+        discountAmount,
+
+      total,
+
+      estimatedCost,
+
+      estimatedProfit:
+        total -
+        estimatedCost,
+
+      paymentMethod:
+        normalizedMethod,
+
+      received:
+        receivedAmount,
+
+      change,
+
+      reference:
+        String(
+          reference ||
+          ''
+        ).trim(),
+
+      notes:
+        String(
+          notes ||
+          ''
+        ).trim(),
+
+      status:
+        'completed',
+
+      createdAt:
+        now,
+
+      updatedAt:
+        now,
+
+      createdBy:
+        normalizeActor(
+          session
+        )
 
     };
 
 
-  const isThisMonth =
-    value => {
+    // ==================================================
+    // LOCALSTORAGE
+    // ==================================================
 
-      const date =
-        new Date(
-          value
-        );
-
-
-      return (
-        !Number.isNaN(
-          date.getTime()
-        ) &&
-        date.getMonth() ===
-          today.getMonth() &&
-        date.getFullYear() ===
-          today.getFullYear()
-      );
-
-    };
+    const allSales =
+      getAllStoredSales();
 
 
-  const todaySales =
-    completed.filter(
-      item =>
-        isToday(
-          item.createdAt
-        )
+    allSales.unshift(
+      sale
     );
 
 
-  const monthSales =
-    completed.filter(
-      item =>
-        isThisMonth(
-          item.createdAt
-        )
+    saveSales(
+      allSales
     );
 
 
-  const sum =
-    list =>
-      list.reduce(
-        (
-          total,
-          sale
-        ) =>
-          total +
-          Number(
-            sale.total ||
-            0
-          ),
-        0
-      );
+    // ==================================================
+    // INDEXEDDB + SYNCQUEUE
+    // ==================================================
 
+    void saveOfflineSale(
+      sale
+    )
+      .then(
+        saved => {
 
-  const profit =
-    list =>
-      list.reduce(
-        (
-          total,
-          sale
-        ) =>
-          total +
-          Number(
-            sale.estimatedProfit ||
-            0
-          ),
-        0
-      );
+          console.log(
+            '✅ Venta respaldada en IndexedDB:',
+            saved
+          );
 
-
-  return {
-
-    totalSales:
-      completed.length,
-
-    todayCount:
-      todaySales.length,
-
-    monthCount:
-      monthSales.length,
-
-    todayIncome:
-      sum(
-        todaySales
-      ),
-
-    monthIncome:
-      sum(
-        monthSales
-      ),
-
-    todayProfit:
-      profit(
-        todaySales
-      ),
-
-    monthProfit:
-      profit(
-        monthSales
-      ),
-
-    productsSoldToday:
-      todaySales.reduce(
-        (
-          sumValue,
-          sale
-        ) =>
-          sumValue +
-          Number(
-            sale.itemCount ||
-            0
-          ),
-        0
-      ),
-
-    productsSoldMonth:
-      monthSales.reduce(
-        (
-          sumValue,
-          sale
-        ) =>
-          sumValue +
-          Number(
-            sale.itemCount ||
-            0
-          ),
-        0
+        }
       )
+      .catch(
+        error => {
+
+          console.error(
+            '❌ No se pudo respaldar la venta en IndexedDB:',
+            error
+          );
+
+        }
+      );
+
+
+    return sale;
+
   };
 
+
+// ======================================================
+// CANCELAR VENTA
+// ======================================================
+
+export const cancelSale =
+  (
+    saleId,
+    reason = ''
+  ) => {
+
+    const current =
+      getSaleById(
+        saleId
+      );
+
+
+    if (
+      !current
+    ) {
+
+      throw new Error(
+        'No se encontró la venta.'
+      );
+
+    }
+
+
+    if (
+      current.status ===
+      'cancelled'
+    ) {
+
+      return current;
+
+    }
+
+
+    const session =
+      getSession();
+
+
+    const {
+      gymId
+    } =
+      getSalesGymContext();
+
+
+    if (
+      !gymId
+    ) {
+
+      throw new Error(
+        'No se pudo determinar el gimnasio actual.'
+      );
+
+    }
+
+
+    // ==================================================
+    // DEVOLVER INVENTARIO
+    // ==================================================
+
+    (
+      Array.isArray(
+        current.items
+      )
+        ? current.items
+        : []
+    ).forEach(
+      item => {
+
+        registerInventoryMovement({
+
+          productId:
+            item.productId,
+
+          type:
+            'return',
+
+          quantity:
+            item.quantity,
+
+          reason:
+            `Cancelación de ${current.folio}`,
+
+          referenceId:
+            saleId,
+
+          actor:
+            session
+
+        });
+
+      }
+    );
+
+
+    // ==================================================
+    // ACTUALIZAR VENTA
+    // ==================================================
+
+    const now =
+      new Date()
+        .toISOString();
+
+
+    const cancelledSale = {
+
+      ...current,
+
+      gymId,
+
+      status:
+        'cancelled',
+
+      cancelledAt:
+        now,
+
+      cancellationReason:
+        String(
+          reason ||
+          ''
+        ).trim(),
+
+      cancelledBy:
+        normalizeActor(
+          session
+        ),
+
+      updatedAt:
+        now
+
+    };
+
+
+    // ==================================================
+    // LOCALSTORAGE
+    // ==================================================
+
+    const allSales =
+      getAllStoredSales();
+
+
+    const index =
+      allSales.findIndex(
+        item =>
+          item.id ===
+            saleId &&
+        (
+          !item.gymId ||
+          item.gymId ===
+            gymId
+        )
+      );
+
+
+    if (
+      index <
+      0
+    ) {
+
+      throw new Error(
+        'No se encontró la venta almacenada.'
+      );
+
+    }
+
+
+    allSales[
+      index
+    ] =
+      cancelledSale;
+
+
+    saveSales(
+      allSales
+    );
+
+
+    // ==================================================
+    // INDEXEDDB + SYNCQUEUE
+    // ==================================================
+
+    void saveOfflineSale(
+      cancelledSale
+    )
+      .then(
+        saved => {
+
+          console.log(
+            '✅ Cancelación de venta respaldada offline:',
+            saved
+          );
+
+        }
+      )
+      .catch(
+        error => {
+
+          console.error(
+            '❌ No se pudo respaldar la cancelación:',
+            error
+          );
+
+        }
+      );
+
+
+    return cancelledSale;
+
+  };
+
+
+// ======================================================
+// RESUMEN
+// ======================================================
+
+export const getSalesSummary =
+  (
+    sales = getSales()
+  ) => {
+
+    const completed =
+      (
+        Array.isArray(
+          sales
+        )
+          ? sales
+          : []
+      )
+        .filter(
+          item =>
+            item.status !==
+            'cancelled'
+        );
+
+
+    const today =
+      new Date();
+
+
+    // ==================================================
+    // HOY
+    // ==================================================
+
+    const isToday =
+      value => {
+
+        const date =
+          new Date(
+            value
+          );
+
+
+        return (
+          !Number.isNaN(
+            date.getTime()
+          ) &&
+          date.getDate() ===
+            today.getDate() &&
+          date.getMonth() ===
+            today.getMonth() &&
+          date.getFullYear() ===
+            today.getFullYear()
+        );
+
+      };
+
+
+    // ==================================================
+    // MES ACTUAL
+    // ==================================================
+
+    const isThisMonth =
+      value => {
+
+        const date =
+          new Date(
+            value
+          );
+
+
+        return (
+          !Number.isNaN(
+            date.getTime()
+          ) &&
+          date.getMonth() ===
+            today.getMonth() &&
+          date.getFullYear() ===
+            today.getFullYear()
+        );
+
+      };
+
+
+    const todaySales =
+      completed.filter(
+        item =>
+          isToday(
+            item.createdAt
+          )
+      );
+
+
+    const monthSales =
+      completed.filter(
+        item =>
+          isThisMonth(
+            item.createdAt
+          )
+      );
+
+
+    // ==================================================
+    // SUMAS
+    // ==================================================
+
+    const sum =
+      list =>
+        list.reduce(
+          (
+            totalValue,
+            sale
+          ) =>
+            totalValue +
+            Number(
+              sale.total ||
+              0
+            ),
+          0
+        );
+
+
+    const profit =
+      list =>
+        list.reduce(
+          (
+            totalValue,
+            sale
+          ) =>
+            totalValue +
+            Number(
+              sale.estimatedProfit ||
+              0
+            ),
+          0
+        );
+
+
+    // ==================================================
+    // RESULTADO
+    // ==================================================
+
+    return {
+
+      totalSales:
+        completed.length,
+
+      todayCount:
+        todaySales.length,
+
+      monthCount:
+        monthSales.length,
+
+      todayIncome:
+        sum(
+          todaySales
+        ),
+
+      monthIncome:
+        sum(
+          monthSales
+        ),
+
+      todayProfit:
+        profit(
+          todaySales
+        ),
+
+      monthProfit:
+        profit(
+          monthSales
+        ),
+
+      productsSoldToday:
+        todaySales.reduce(
+          (
+            sumValue,
+            sale
+          ) =>
+            sumValue +
+            Number(
+              sale.itemCount ||
+              0
+            ),
+          0
+        ),
+
+      productsSoldMonth:
+        monthSales.reduce(
+          (
+            sumValue,
+            sale
+          ) =>
+            sumValue +
+            Number(
+              sale.itemCount ||
+              0
+            ),
+          0
+        )
+
+    };
+
+  };
+
+
+// ======================================================
+// DEFAULT
+// ======================================================
+
+const salesService = {
+
+  getAllStoredSales,
+
+  getSales,
+
+  getSaleById,
+
+  createSale,
+
+  cancelSale,
+
+  getSalesSummary
+
 };
+
+
+export default salesService;

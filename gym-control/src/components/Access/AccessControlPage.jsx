@@ -40,7 +40,8 @@ import {
   getMemberByQRToken,
   getStoredMembers,
   saveMember,
-  hashValue
+  hashValue,
+  getCurrentGymContext
 } from '../../utils/memberId';
 
 import {
@@ -62,6 +63,10 @@ import {
   captureVideoEvidence,
   openTemporaryCamera
 } from '../../utils/accessEvidence';
+
+import {
+  saveOfflineAttendance
+} from '../../offline/repositories/attendanceRepository.js';
 
 
 // ======================================================
@@ -992,11 +997,38 @@ const AccessControlPage = () => {
         .toISOString();
 
 
+    const {
+      gymId,
+      gymCode,
+      gymName
+    } =
+      getCurrentGymContext();
+
+
+    // ====================================================
+    // BUSCAR ASISTENCIA ABIERTA DEL GIMNASIO ACTUAL
+    // ====================================================
+    //
+    // Los IDs de miembro pueden repetirse entre gimnasios.
+    // Por eso, si el registro ya contiene gymId, exigimos
+    // que coincida con la sesión actual.
+    //
+    // Los registros legacy sin gymId se aceptan únicamente
+    // como compatibilidad durante esta migración.
+    //
+    // ====================================================
+
     const openRecord =
       attendance.find(
         record =>
           record.memberId ===
             member.id &&
+          (
+            !gymId ||
+            !record.gymId ||
+            record.gymId ===
+              gymId
+          ) &&
           record.status ===
             'inside' &&
           !record.exitAt
@@ -1018,16 +1050,26 @@ const AccessControlPage = () => {
 
 
       const durationMinutes =
-        Math.max(
-          0,
-          Math.round(
-            (
-              new Date(now).getTime() -
-              entryDate.getTime()
-            ) /
-            60000
-          )
-        );
+        Number.isNaN(
+          entryDate.getTime()
+        )
+          ? 0
+          : Math.max(
+              0,
+              Math.round(
+                (
+                  new Date(
+                    now
+                  ).getTime() -
+                  entryDate.getTime()
+                ) /
+                60000
+              )
+            );
+
+
+      let completedRecord =
+        null;
 
 
       const updatedAttendance =
@@ -1044,9 +1086,30 @@ const AccessControlPage = () => {
             }
 
 
-            return {
+            completedRecord = {
 
               ...record,
+
+              gymId:
+                gymId ||
+                record.gymId ||
+                member.gymId ||
+                null,
+
+              gymCode:
+                gymCode ||
+                record.gymCode ||
+                member.gymCode ||
+                null,
+
+              gymName:
+                gymName ||
+                record.gymName ||
+                member.gymName ||
+                null,
+
+              personType:
+                'member',
 
               exitAt:
                 now,
@@ -1069,6 +1132,9 @@ const AccessControlPage = () => {
 
             };
 
+
+            return completedRecord;
+
           }
         );
 
@@ -1077,6 +1143,54 @@ const AccessControlPage = () => {
         ATTENDANCE_KEY,
         updatedAttendance
       );
+
+
+      // ==================================================
+      // INDEXEDDB + SYNCQUEUE
+      // ==================================================
+      //
+      // No bloqueamos la interfaz esperando IndexedDB.
+      //
+      // ==================================================
+
+      if (
+        completedRecord?.gymId
+      ) {
+
+        void saveOfflineAttendance(
+          completedRecord
+        )
+          .then(
+            offlineRecord => {
+
+              console.log(
+                '✅ Salida respaldada offline:',
+                {
+                  gymId:
+                    offlineRecord.gymId,
+
+                  attendanceId:
+                    offlineRecord.id,
+
+                  syncStatus:
+                    offlineRecord.syncStatus
+                }
+              );
+
+            }
+          )
+          .catch(
+            error => {
+
+              console.error(
+                '❌ No se pudo respaldar la salida en IndexedDB:',
+                error
+              );
+
+            }
+          );
+
+      }
 
 
       saveMember({
@@ -1114,7 +1228,9 @@ const AccessControlPage = () => {
           openRecord.id,
 
         time:
-          now
+          now,
+
+        durationMinutes
 
       };
 
@@ -1130,6 +1246,24 @@ const AccessControlPage = () => {
       id:
         createAccessId(),
 
+      gymId:
+        gymId ||
+        member.gymId ||
+        null,
+
+      gymCode:
+        gymCode ||
+        member.gymCode ||
+        null,
+
+      gymName:
+        gymName ||
+        member.gymName ||
+        null,
+
+      personType:
+        'member',
+
       memberId:
         member.id,
 
@@ -1144,6 +1278,9 @@ const AccessControlPage = () => {
 
       method,
 
+      entryMethod:
+        method,
+
       entryEvidence:
         evidence ||
         null,
@@ -1152,6 +1289,9 @@ const AccessControlPage = () => {
         now,
 
       exitAt:
+        null,
+
+      exitMethod:
         null,
 
       status:
@@ -1178,6 +1318,50 @@ const AccessControlPage = () => {
       ATTENDANCE_KEY,
       attendance
     );
+
+
+    // ====================================================
+    // INDEXEDDB + SYNCQUEUE
+    // ====================================================
+
+    if (
+      attendanceRecord.gymId
+    ) {
+
+      void saveOfflineAttendance(
+        attendanceRecord
+      )
+        .then(
+          offlineRecord => {
+
+            console.log(
+              '✅ Entrada respaldada offline:',
+              {
+                gymId:
+                  offlineRecord.gymId,
+
+                attendanceId:
+                  offlineRecord.id,
+
+                syncStatus:
+                  offlineRecord.syncStatus
+              }
+            );
+
+          }
+        )
+        .catch(
+          error => {
+
+            console.error(
+              '❌ No se pudo respaldar la entrada en IndexedDB:',
+              error
+            );
+
+          }
+        );
+
+    }
 
 
     saveMember({
@@ -1215,12 +1399,14 @@ const AccessControlPage = () => {
         attendanceRecord.id,
 
       time:
-        now
+        now,
+
+      durationMinutes:
+        0
 
     };
 
   };
-
 
   // ======================================================
   // PROCESAR VISITA AUTENTICADA

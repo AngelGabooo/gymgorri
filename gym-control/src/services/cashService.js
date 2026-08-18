@@ -1,13 +1,33 @@
 // src/services/cashService.js
 
+import {
+  getCurrentGymContext
+} from '../utils/memberId.js';
+
+import {
+  saveOfflineCashShift
+} from '../offline/repositories/cashShiftRepository.js';
+
+import {
+  saveOfflineCashMovement
+} from '../offline/repositories/cashMovementRepository.js';
+
+
+// ======================================================
+// STORAGE
+// ======================================================
+
 export const CASH_SHIFTS_KEY =
   'gym_control_cash_shifts';
+
 
 export const CASH_MOVEMENTS_KEY =
   'gym_control_cash_movements';
 
+
 const PAYMENTS_KEY =
   'gym_control_payments';
+
 
 const SALES_KEY =
   'gym_control_sales';
@@ -17,125 +37,161 @@ const SALES_KEY =
 // HELPERS
 // ======================================================
 
-const readArray = (
-  key
-) => {
+const readArray =
+  key => {
 
-  try {
+    try {
 
-    const raw =
-      localStorage.getItem(
-        key
+      const raw =
+        localStorage.getItem(
+          key
+        );
+
+
+      if (!raw) {
+
+        return [];
+
+      }
+
+
+      const parsed =
+        JSON.parse(
+          raw
+        );
+
+
+      return Array.isArray(
+        parsed
+      )
+        ? parsed
+        : [];
+
+    } catch (error) {
+
+      console.error(
+        `Error leyendo ${key}:`,
+        error
       );
 
-    if (!raw) {
+
       return [];
+
     }
 
-    const parsed =
-      JSON.parse(
-        raw
-      );
-
-    return Array.isArray(
-      parsed
-    )
-      ? parsed
-      : [];
-
-  } catch (error) {
-
-    console.error(
-      `Error leyendo ${key}:`,
-      error
-    );
-
-    return [];
-
-  }
-
-};
-
-
-const saveArray = (
-  key,
-  records
-) => {
-
-  localStorage.setItem(
-    key,
-    JSON.stringify(
-      Array.isArray(records)
-        ? records
-        : []
-    )
-  );
-
-  window.dispatchEvent(
-    new Event(
-      'gym-storage-update'
-    )
-  );
-
-  window.dispatchEvent(
-    new Event(
-      'gym-cash-update'
-    )
-  );
-
-};
-
-
-const createId = (
-  prefix
-) => {
-
-  if (
-    window.crypto?.randomUUID
-  ) {
-
-    return `${prefix}-${window.crypto.randomUUID()}`;
-
-  }
-
-  return `${prefix}-${Date.now()}-${Math.random()
-    .toString(36)
-    .substring(2, 8)}`;
-
-};
-
-
-const normalizeActor = (
-  actor
-) => {
-
-  if (!actor) {
-    return null;
-  }
-
-  return {
-    id:
-      actor.id ||
-      actor.userId ||
-      null,
-
-    name:
-      actor.name ||
-      actor.fullName ||
-      actor.email ||
-      'Usuario',
-
-    email:
-      actor.email ||
-      '',
-
-    role:
-      actor.role ||
-      ''
   };
 
-};
 
+// ======================================================
+// GUARDAR
+// ======================================================
+
+const saveArray =
+  (
+    key,
+    records
+  ) => {
+
+    localStorage.setItem(
+      key,
+      JSON.stringify(
+        Array.isArray(
+          records
+        )
+          ? records
+          : []
+      )
+    );
+
+
+    window.dispatchEvent(
+      new Event(
+        'gym-storage-update'
+      )
+    );
+
+
+    window.dispatchEvent(
+      new Event(
+        'gym-cash-update'
+      )
+    );
+
+  };
+
+
+// ======================================================
+// ID
+// ======================================================
+
+const createId =
+  prefix => {
+
+    if (
+      window.crypto?.randomUUID
+    ) {
+
+      return `${prefix}-${window.crypto.randomUUID()}`;
+
+    }
+
+
+    return (
+      `${prefix}-${Date.now()}-` +
+      Math.random()
+        .toString(36)
+        .substring(
+          2,
+          8
+        )
+    );
+
+  };
+
+
+// ======================================================
+// ACTOR
+// ======================================================
+
+const normalizeActor =
+  actor => {
+
+    if (!actor) {
+
+      return null;
+
+    }
+
+
+    return {
+
+      id:
+        actor.id ||
+        actor.userId ||
+        null,
+
+      name:
+        actor.name ||
+        actor.fullName ||
+        actor.email ||
+        'Usuario',
+
+      email:
+        actor.email ||
+        '',
+
+      role:
+        actor.role ||
+        ''
+
+    };
+
+  };
+
+
+// ======================================================
+// SESIÓN
+// ======================================================
 
 const getStoredSession =
   () => {
@@ -146,6 +202,7 @@ const getStoredSession =
         localStorage.getItem(
           'gym_control_session'
         );
+
 
       return raw
         ? JSON.parse(
@@ -162,28 +219,64 @@ const getStoredSession =
   };
 
 
-const parseAmount = (
-  value
-) => {
+// ======================================================
+// CONTEXTO
+// ======================================================
 
-  const number =
-    Number(
-      value ||
-      0
-    );
+const getCashGymContext =
+  () => {
 
-  return Number.isFinite(
-    number
-  )
-    ? number
-    : 0;
+    try {
 
-};
+      return (
+        getCurrentGymContext() ||
+        {}
+      );
+
+    } catch (error) {
+
+      console.error(
+        'Error obteniendo contexto del gimnasio para caja:',
+        error
+      );
 
 
-const normalizeMethod = (
-  value
-) =>
+      return {};
+
+    }
+
+  };
+
+
+// ======================================================
+// CANTIDAD
+// ======================================================
+
+const parseAmount =
+  value => {
+
+    const number =
+      Number(
+        value ||
+        0
+      );
+
+
+    return Number.isFinite(
+      number
+    )
+      ? number
+      : 0;
+
+  };
+
+
+// ======================================================
+// MÉTODO
+// ======================================================
+
+const normalizeMethod =
+  value =>
     String(
       value ||
       ''
@@ -192,64 +285,291 @@ const normalizeMethod = (
       .toLowerCase();
 
 
-const isCashMethod = (
-  method
-) =>
+const isCashMethod =
+  method =>
     normalizeMethod(
       method
     ) ===
     'efectivo';
 
 
-const isWithinShift = (
-  value,
-  shift
-) => {
+// ======================================================
+// PERIODO DEL TURNO
+// ======================================================
 
-  if (
-    !value ||
-    !shift?.openedAt
-  ) {
-    return false;
-  }
+const isWithinShift =
+  (
+    value,
+    shift
+  ) => {
 
-  const date =
-    new Date(
-      value
+    if (
+      !value ||
+      !shift?.openedAt
+    ) {
+
+      return false;
+
+    }
+
+
+    const date =
+      new Date(
+        value
+      );
+
+
+    const start =
+      new Date(
+        shift.openedAt
+      );
+
+
+    const end =
+      new Date(
+        shift.closedAt ||
+        new Date()
+          .toISOString()
+      );
+
+
+    if (
+      Number.isNaN(
+        date.getTime()
+      ) ||
+      Number.isNaN(
+        start.getTime()
+      ) ||
+      Number.isNaN(
+        end.getTime()
+      )
+    ) {
+
+      return false;
+
+    }
+
+
+    return (
+      date >= start &&
+      date <= end
     );
 
-  const start =
-    new Date(
-      shift.openedAt
+  };
+
+
+// ======================================================
+// GYM DEL REGISTRO
+// ======================================================
+
+const belongsToCurrentGym =
+  record => {
+
+    const {
+      gymId
+    } =
+      getCashGymContext();
+
+
+    if (!gymId) {
+
+      return true;
+
+    }
+
+
+    /*
+     * Compatibilidad con registros anteriores
+     * creados antes del modo multi-gym.
+     */
+
+    if (
+      !record?.gymId
+    ) {
+
+      return true;
+
+    }
+
+
+    return (
+      record.gymId ===
+      gymId
     );
 
-  const end =
-    new Date(
-      shift.closedAt ||
-      new Date()
-        .toISOString()
-    );
+  };
 
-  if (
-    Number.isNaN(
-      date.getTime()
-    ) ||
-    Number.isNaN(
-      start.getTime()
-    ) ||
-    Number.isNaN(
-      end.getTime()
-    )
-  ) {
-    return false;
-  }
 
-  return (
-    date >= start &&
-    date <= end
-  );
+// ======================================================
+// MIGRAR TURNOS LEGACY
+// ======================================================
 
-};
+const migrateLegacyShifts =
+  shifts => {
+
+    const {
+      gymId,
+      gymCode,
+      gymName
+    } =
+      getCashGymContext();
+
+
+    if (!gymId) {
+
+      return shifts;
+
+    }
+
+
+    let changed =
+      false;
+
+
+    const migrated =
+      shifts.map(
+        shift => {
+
+          if (
+            shift?.gymId
+          ) {
+
+            return shift;
+
+          }
+
+
+          changed =
+            true;
+
+
+          return {
+
+            ...shift,
+
+            gymId,
+
+            gymCode:
+              gymCode ||
+              null,
+
+            gymName:
+              gymName ||
+              null,
+
+            updatedAt:
+              shift.updatedAt ||
+              shift.createdAt ||
+              new Date()
+                .toISOString()
+
+          };
+
+        }
+      );
+
+
+    if (
+      changed
+    ) {
+
+      saveArray(
+        CASH_SHIFTS_KEY,
+        migrated
+      );
+
+    }
+
+
+    return migrated;
+
+  };
+
+
+// ======================================================
+// MIGRAR MOVIMIENTOS LEGACY
+// ======================================================
+
+const migrateLegacyMovements =
+  movements => {
+
+    const {
+      gymId,
+      gymCode,
+      gymName
+    } =
+      getCashGymContext();
+
+
+    if (!gymId) {
+
+      return movements;
+
+    }
+
+
+    let changed =
+      false;
+
+
+    const migrated =
+      movements.map(
+        movement => {
+
+          if (
+            movement?.gymId
+          ) {
+
+            return movement;
+
+          }
+
+
+          changed =
+            true;
+
+
+          return {
+
+            ...movement,
+
+            gymId,
+
+            gymCode:
+              gymCode ||
+              null,
+
+            gymName:
+              gymName ||
+              null,
+
+            updatedAt:
+              movement.updatedAt ||
+              movement.createdAt ||
+              new Date()
+                .toISOString()
+
+          };
+
+        }
+      );
+
+
+    if (
+      changed
+    ) {
+
+      saveArray(
+        CASH_MOVEMENTS_KEY,
+        migrated
+      );
+
+    }
+
+
+    return migrated;
+
+  };
 
 
 // ======================================================
@@ -257,48 +577,113 @@ const isWithinShift = (
 // ======================================================
 
 export const getCashShifts =
-  () =>
-    readArray(
-      CASH_SHIFTS_KEY
-    );
+  () => {
+
+    const shifts =
+      migrateLegacyShifts(
+        readArray(
+          CASH_SHIFTS_KEY
+        )
+      );
 
 
-export const getCashMovements =
-  () =>
-    readArray(
-      CASH_MOVEMENTS_KEY
-    );
+    const {
+      gymId
+    } =
+      getCashGymContext();
 
 
-export const getOpenCashShiftForUser =
-  (
-    userId
-  ) => {
+    if (!gymId) {
 
-    if (!userId) {
-      return null;
+      return shifts;
+
     }
 
+
+    return shifts.filter(
+      shift =>
+        shift.gymId ===
+        gymId
+    );
+
+  };
+
+
+// ======================================================
+// MOVIMIENTOS
+// ======================================================
+
+export const getCashMovements =
+  () => {
+
+    const movements =
+      migrateLegacyMovements(
+        readArray(
+          CASH_MOVEMENTS_KEY
+        )
+      );
+
+
+    const {
+      gymId
+    } =
+      getCashGymContext();
+
+
+    if (!gymId) {
+
+      return movements;
+
+    }
+
+
+    return movements.filter(
+      movement =>
+        movement.gymId ===
+        gymId
+    );
+
+  };
+
+
+// ======================================================
+// TURNO ABIERTO POR USUARIO
+// ======================================================
+
+export const getOpenCashShiftForUser =
+  userId => {
+
+    if (!userId) {
+
+      return null;
+
+    }
+
+
     return (
-      getCashShifts()
-        .find(
-          shift =>
-            shift.status ===
-              'open' &&
-            shift.employee?.id ===
-              userId
-        ) ||
+      getCashShifts().find(
+        shift =>
+          shift.status ===
+            'open' &&
+          shift.employee?.id ===
+            userId
+      ) ||
       null
     );
 
   };
 
 
+// ======================================================
+// TURNO ACTUAL
+// ======================================================
+
 export const getOpenCashShiftForCurrentUser =
   () => {
 
     const session =
       getStoredSession();
+
 
     return getOpenCashShiftForUser(
       session?.id
@@ -307,494 +692,683 @@ export const getOpenCashShiftForCurrentUser =
   };
 
 
-export const openCashShift = ({
-  openingCash = 0,
-  notes = '',
-  actor = null
-}) => {
+// ======================================================
+// ABRIR CAJA
+// ======================================================
 
-  const employee =
-    normalizeActor(
-      actor ||
-      getStoredSession()
+export const openCashShift =
+  ({
+    openingCash = 0,
+    notes = '',
+    actor = null
+  }) => {
+
+    const employee =
+      normalizeActor(
+        actor ||
+        getStoredSession()
+      );
+
+
+    if (
+      !employee?.id
+    ) {
+
+      throw new Error(
+        'No existe una sesión válida para abrir caja.'
+      );
+
+    }
+
+
+    const {
+      gymId,
+      gymCode,
+      gymName
+    } =
+      getCashGymContext();
+
+
+    if (!gymId) {
+
+      throw new Error(
+        'No se pudo determinar el gimnasio actual.'
+      );
+
+    }
+
+
+    const existing =
+      getOpenCashShiftForUser(
+        employee.id
+      );
+
+
+    if (existing) {
+
+      throw new Error(
+        'Este usuario ya tiene un turno de caja abierto.'
+      );
+
+    }
+
+
+    const numericOpening =
+      parseAmount(
+        openingCash
+      );
+
+
+    if (
+      numericOpening <
+      0
+    ) {
+
+      throw new Error(
+        'El efectivo inicial no puede ser negativo.'
+      );
+
+    }
+
+
+    const now =
+      new Date()
+        .toISOString();
+
+
+    const shift = {
+
+      id:
+        createId(
+          'SHIFT'
+        ),
+
+      gymId,
+
+      gymCode:
+        gymCode ||
+        null,
+
+      gymName:
+        gymName ||
+        null,
+
+      employee,
+
+      openedAt:
+        now,
+
+      closedAt:
+        null,
+
+      openingCash:
+        numericOpening,
+
+      countedCash:
+        null,
+
+      expectedCash:
+        null,
+
+      difference:
+        null,
+
+      notes:
+        String(
+          notes ||
+          ''
+        ).trim(),
+
+      closingNotes:
+        '',
+
+      status:
+        'open',
+
+      closeSnapshot:
+        null,
+
+      createdAt:
+        now,
+
+      updatedAt:
+        now
+
+    };
+
+
+    const allShifts =
+      readArray(
+        CASH_SHIFTS_KEY
+      );
+
+
+    allShifts.unshift(
+      shift
     );
 
-  if (
-    !employee?.id
-  ) {
 
-    throw new Error(
-      'No existe una sesión válida para abrir caja.'
+    saveArray(
+      CASH_SHIFTS_KEY,
+      allShifts
     );
 
-  }
 
-  const existing =
-    getOpenCashShiftForUser(
-      employee.id
-    );
+    void saveOfflineCashShift(
+      shift
+    )
+      .then(
+        saved => {
 
-  if (existing) {
+          console.log(
+            '✅ Apertura de caja respaldada offline:',
+            saved
+          );
 
-    throw new Error(
-      'Este usuario ya tiene un turno de caja abierto.'
-    );
+        }
+      )
+      .catch(
+        error => {
 
-  }
+          console.error(
+            '❌ No se pudo respaldar la apertura de caja:',
+            error
+          );
 
-  const numericOpening =
-    parseAmount(
-      openingCash
-    );
+        }
+      );
 
-  if (
-    numericOpening <
-    0
-  ) {
 
-    throw new Error(
-      'El efectivo inicial no puede ser negativo.'
-    );
+    return shift;
 
-  }
-
-  const now =
-    new Date()
-      .toISOString();
-
-  const shift = {
-    id:
-      createId(
-        'SHIFT'
-      ),
-
-    employee,
-
-    openedAt:
-      now,
-
-    closedAt:
-      null,
-
-    openingCash:
-      numericOpening,
-
-    countedCash:
-      null,
-
-    expectedCash:
-      null,
-
-    difference:
-      null,
-
-    notes:
-      String(
-        notes ||
-        ''
-      ).trim(),
-
-    closingNotes:
-      '',
-
-    status:
-      'open',
-
-    closeSnapshot:
-      null,
-
-    createdAt:
-      now,
-
-    updatedAt:
-      now
   };
-
-  const shifts =
-    getCashShifts();
-
-  shifts.unshift(
-    shift
-  );
-
-  saveArray(
-    CASH_SHIFTS_KEY,
-    shifts
-  );
-
-  return shift;
-
-};
 
 
 // ======================================================
 // MOVIMIENTOS MANUALES
 // ======================================================
 
-export const createCashMovement = ({
-  shiftId,
-  type,
-  amount,
-  concept,
-  notes = '',
-  actor = null
-}) => {
-
-  const allowedTypes = [
-    'expense',
-    'withdrawal',
-    'other_income'
-  ];
-
-  if (
-    !allowedTypes.includes(
-      type
-    )
-  ) {
-
-    throw new Error(
-      'Tipo de movimiento de caja no válido.'
-    );
-
-  }
-
-  const shifts =
-    getCashShifts();
-
-  const shift =
-    shifts.find(
-      item =>
-        item.id ===
-        shiftId
-    );
-
-  if (
-    !shift ||
-    shift.status !==
-      'open'
-  ) {
-
-    throw new Error(
-      'El turno de caja no está abierto.'
-    );
-
-  }
-
-  const numericAmount =
-    parseAmount(
-      amount
-    );
-
-  if (
-    numericAmount <=
-    0
-  ) {
-
-    throw new Error(
-      'El monto debe ser mayor a cero.'
-    );
-
-  }
-
-  const cleanConcept =
-    String(
-      concept ||
-      ''
-    ).trim();
-
-  if (!cleanConcept) {
-
-    throw new Error(
-      'Escribe el concepto del movimiento.'
-    );
-
-  }
-
-  const movement = {
-    id:
-      createId(
-        'CASHMOV'
-      ),
-
-    shiftId:
-      shift.id,
-
-    employee:
-      normalizeActor(
-        actor ||
-        getStoredSession()
-      ),
-
+export const createCashMovement =
+  ({
+    shiftId,
     type,
+    amount,
+    concept,
+    notes = '',
+    actor = null
+  }) => {
 
-    amount:
-      numericAmount,
+    const allowedTypes = [
+      'expense',
+      'withdrawal',
+      'other_income'
+    ];
 
-    concept:
-      cleanConcept,
 
-    notes:
+    if (
+      !allowedTypes.includes(
+        type
+      )
+    ) {
+
+      throw new Error(
+        'Tipo de movimiento de caja no válido.'
+      );
+
+    }
+
+
+    const shifts =
+      getCashShifts();
+
+
+    const shift =
+      shifts.find(
+        item =>
+          item.id ===
+          shiftId
+      );
+
+
+    if (
+      !shift ||
+      shift.status !==
+        'open'
+    ) {
+
+      throw new Error(
+        'El turno de caja no está abierto.'
+      );
+
+    }
+
+
+    const numericAmount =
+      parseAmount(
+        amount
+      );
+
+
+    if (
+      numericAmount <=
+      0
+    ) {
+
+      throw new Error(
+        'El monto debe ser mayor a cero.'
+      );
+
+    }
+
+
+    const cleanConcept =
       String(
-        notes ||
+        concept ||
         ''
-      ).trim(),
+      ).trim();
 
-    createdAt:
+
+    if (!cleanConcept) {
+
+      throw new Error(
+        'Escribe el concepto del movimiento.'
+      );
+
+    }
+
+
+    const {
+      gymId,
+      gymCode,
+      gymName
+    } =
+      getCashGymContext();
+
+
+    if (!gymId) {
+
+      throw new Error(
+        'No se pudo determinar el gimnasio actual.'
+      );
+
+    }
+
+
+    const now =
       new Date()
-        .toISOString()
+        .toISOString();
+
+
+    const movement = {
+
+      id:
+        createId(
+          'CASHMOV'
+        ),
+
+      gymId,
+
+      gymCode:
+        gymCode ||
+        null,
+
+      gymName:
+        gymName ||
+        null,
+
+      shiftId:
+        shift.id,
+
+      employee:
+        normalizeActor(
+          actor ||
+          getStoredSession()
+        ),
+
+      type,
+
+      amount:
+        numericAmount,
+
+      concept:
+        cleanConcept,
+
+      notes:
+        String(
+          notes ||
+          ''
+        ).trim(),
+
+      createdAt:
+        now,
+
+      updatedAt:
+        now
+
+    };
+
+
+    const allMovements =
+      readArray(
+        CASH_MOVEMENTS_KEY
+      );
+
+
+    allMovements.unshift(
+      movement
+    );
+
+
+    saveArray(
+      CASH_MOVEMENTS_KEY,
+      allMovements
+    );
+
+
+    void saveOfflineCashMovement(
+      movement
+    )
+      .then(
+        saved => {
+
+          console.log(
+            '✅ Movimiento de caja respaldado offline:',
+            saved
+          );
+
+        }
+      )
+      .catch(
+        error => {
+
+          console.error(
+            '❌ No se pudo respaldar el movimiento de caja:',
+            error
+          );
+
+        }
+      );
+
+
+    return movement;
+
   };
 
-  const movements =
-    getCashMovements();
-
-  movements.unshift(
-    movement
-  );
-
-  saveArray(
-    CASH_MOVEMENTS_KEY,
-    movements
-  );
-
-  return movement;
-
-};
-
 
 // ======================================================
-// TRANSACCIONES DEL TURNO
+// PERTENECE AL TURNO
 // ======================================================
 
-const belongsToShift = (
-  record,
-  shift
-) => {
+const belongsToShift =
+  (
+    record,
+    shift
+  ) => {
 
-  if (
-    !record ||
-    !shift?.id
-  ) {
-    return false;
-  }
+    if (
+      !record ||
+      !shift?.id
+    ) {
+
+      return false;
+
+    }
 
 
-  // PRIORIDAD 1:
-  // vínculo explícito con el turno.
-  if (
-    record.cashShiftId
-  ) {
-
-    return (
-      String(
-        record.cashShiftId
-      ) ===
-      String(
-        shift.id
+    if (
+      !belongsToCurrentGym(
+        record
       )
-    );
+    ) {
 
-  }
+      return false;
 
-
-  const recordDate =
-    record.createdAt ||
-    record.date ||
-    null;
+    }
 
 
-  if (
-    !isWithinShift(
-      recordDate,
-      shift
+    // ==================================================
+    // VÍNCULO EXPLÍCITO
+    // ==================================================
+
+    if (
+      record.cashShiftId
+    ) {
+
+      return (
+        String(
+          record.cashShiftId
+        ) ===
+        String(
+          shift.id
+        )
+      );
+
+    }
+
+
+    const recordDate =
+      record.createdAt ||
+      record.date ||
+      null;
+
+
+    if (
+      !isWithinShift(
+        recordDate,
+        shift
+      )
+    ) {
+
+      return false;
+
+    }
+
+
+    const recordEmployeeId =
+      record.cashEmployeeId ||
+      record?.createdBy?.id ||
+      record?.employee?.id ||
+      null;
+
+
+    if (
+      recordEmployeeId
+    ) {
+
+      return (
+        String(
+          recordEmployeeId
+        ) ===
+        String(
+          shift.employee?.id ||
+          ''
+        )
+      );
+
+    }
+
+
+    return true;
+
+  };
+
+
+// ======================================================
+// PAGOS DEL TURNO
+// ======================================================
+
+export const getShiftPayments =
+  shift => {
+
+    if (!shift?.id) {
+
+      return [];
+
+    }
+
+
+    return readArray(
+      PAYMENTS_KEY
     )
-  ) {
+      .filter(
+        payment =>
+          payment.status !==
+            'cancelled' &&
+          payment.status !==
+            'deleted' &&
+          belongsToShift(
+            payment,
+            shift
+          )
+      );
 
-    return false;
-
-  }
-
-
-  const recordEmployeeId =
-    record.cashEmployeeId ||
-    record?.createdBy?.id ||
-    record?.employee?.id ||
-    null;
-
-
-  // PRIORIDAD 2:
-  // mismo empleado y dentro del horario.
-  if (
-    recordEmployeeId
-  ) {
-
-    return (
-      String(
-        recordEmployeeId
-      ) ===
-      String(
-        shift.employee?.id ||
-        ''
-      )
-    );
-
-  }
+  };
 
 
-  // COMPATIBILIDAD:
-  // registros antiguos sin empleado ni cashShiftId.
-  // Si sucedieron dentro del rango exacto del turno,
-  // los incluimos.
-  return true;
+// ======================================================
+// VENTAS DEL TURNO
+// ======================================================
 
-};
+export const getShiftSales =
+  shift => {
 
+    if (!shift?.id) {
 
-export const getShiftPayments = (
-  shift
-) => {
+      return [];
 
-  if (!shift?.id) {
-    return [];
-  }
-
-  return readArray(
-    PAYMENTS_KEY
-  )
-    .filter(
-      payment =>
-        payment.status !==
-          'cancelled' &&
-        payment.status !==
-          'deleted' &&
-        belongsToShift(
-          payment,
-          shift
-        )
-    );
-
-};
+    }
 
 
-export const getShiftSales = (
-  shift
-) => {
+    return readArray(
+      SALES_KEY
+    )
+      .filter(
+        sale =>
+          sale.status !==
+            'cancelled' &&
+          belongsToShift(
+            sale,
+            shift
+          )
+      );
 
-  if (!shift?.id) {
-    return [];
-  }
-
-  return readArray(
-    SALES_KEY
-  )
-    .filter(
-      sale =>
-        sale.status !==
-          'cancelled' &&
-        belongsToShift(
-          sale,
-          shift
-        )
-    );
-
-};
+  };
 
 
-export const getShiftMovements = (
-  shift
-) => {
+// ======================================================
+// MOVIMIENTOS DEL TURNO
+// ======================================================
 
-  if (!shift?.id) {
-    return [];
-  }
+export const getShiftMovements =
+  shift => {
 
-  return getCashMovements()
-    .filter(
-      movement =>
-        movement.shiftId ===
-        shift.id
-    );
+    if (!shift?.id) {
 
-};
+      return [];
+
+    }
+
+
+    return getCashMovements()
+      .filter(
+        movement =>
+          movement.shiftId ===
+          shift.id
+      );
+
+  };
 
 
 // ======================================================
 // RESUMEN DEL TURNO
 // ======================================================
 
-export const calculateCashShiftSummary = (
-  shift
-) => {
+export const calculateCashShiftSummary =
+  shift => {
 
-  if (!shift?.id) {
+    if (!shift?.id) {
 
-    return {
-      openingCash: 0,
+      return {
 
-      memberships: {
-        total: 0,
-        cash: 0,
-        count: 0
-      },
+        openingCash:
+          0,
 
-      sales: {
-        total: 0,
-        cash: 0,
-        count: 0,
-        itemCount: 0,
-        products: []
-      },
+        memberships: {
 
-      otherIncome: 0,
-      expenses: 0,
-      withdrawals: 0,
+          total:
+            0,
 
-      expectedCash: 0,
+          cash:
+            0,
 
-      paymentMethods: {}
-    };
+          count:
+            0
 
-  }
+        },
 
-  const payments =
-    getShiftPayments(
-      shift
-    );
+        sales: {
 
-  const sales =
-    getShiftSales(
-      shift
-    );
+          total:
+            0,
 
-  const movements =
-    getShiftMovements(
-      shift
-    );
+          cash:
+            0,
 
+          count:
+            0,
 
-  const membershipsTotal =
-    payments.reduce(
-      (
-        sum,
-        payment
-      ) =>
-        sum +
-        parseAmount(
-          payment.amount
-        ),
-      0
-    );
+          itemCount:
+            0,
+
+          products:
+            []
+
+        },
+
+        otherIncome:
+          0,
+
+        expenses:
+          0,
+
+        withdrawals:
+          0,
+
+        expectedCash:
+          0,
+
+        paymentMethods:
+          {}
+
+      };
+
+    }
 
 
-  const membershipsCash =
-    payments
-      .filter(
-        payment =>
-          isCashMethod(
-            payment.paymentMethod ||
-            payment.method
-          )
-      )
-      .reduce(
+    const payments =
+      getShiftPayments(
+        shift
+      );
+
+
+    const sales =
+      getShiftSales(
+        shift
+      );
+
+
+    const movements =
+      getShiftMovements(
+        shift
+      );
+
+
+    // ==================================================
+    // MEMBRESÍAS
+    // ==================================================
+
+    const membershipsTotal =
+      payments.reduce(
         (
           sum,
           payment
@@ -807,29 +1381,34 @@ export const calculateCashShiftSummary = (
       );
 
 
-  const salesTotal =
-    sales.reduce(
-      (
-        sum,
-        sale
-      ) =>
-        sum +
-        parseAmount(
-          sale.total
-        ),
-      0
-    );
+    const membershipsCash =
+      payments
+        .filter(
+          payment =>
+            isCashMethod(
+              payment.paymentMethod ||
+              payment.method
+            )
+        )
+        .reduce(
+          (
+            sum,
+            payment
+          ) =>
+            sum +
+            parseAmount(
+              payment.amount
+            ),
+          0
+        );
 
 
-  const salesCash =
-    sales
-      .filter(
-        sale =>
-          isCashMethod(
-            sale.paymentMethod
-          )
-      )
-      .reduce(
+    // ==================================================
+    // VENTAS
+    // ==================================================
+
+    const salesTotal =
+      sales.reduce(
         (
           sum,
           sale
@@ -842,467 +1421,601 @@ export const calculateCashShiftSummary = (
       );
 
 
-  const productsMap =
-    new Map();
-
-
-  sales.forEach(
-    sale => {
-
-      (
-        Array.isArray(
-          sale.items
-        )
-          ? sale.items
-          : []
-      ).forEach(
-        item => {
-
-          const key =
-            item.productId ||
-            item.name ||
-            'producto';
-
-
-          const current =
-            productsMap.get(
-              key
-            ) ||
-            {
-              productId:
-                item.productId ||
-                '',
-
-              name:
-                item.name ||
-                'Producto',
-
-              quantity:
-                0,
-
-              revenue:
-                0
-            };
-
-
-          current.quantity +=
-            parseAmount(
-              item.quantity
-            );
-
-
-          current.revenue +=
-            parseAmount(
-              item.subtotal ??
-              (
-                parseAmount(
-                  item.unitPrice
-                ) *
-                parseAmount(
-                  item.quantity
-                )
-              )
-            );
-
-
-          productsMap.set(
-            key,
-            current
-          );
-
-        }
-      );
-
-    }
-  );
-
-
-  const soldProducts =
-    Array.from(
-      productsMap.values()
-    )
-      .sort(
-        (
-          first,
-          second
-        ) =>
-          second.quantity -
-          first.quantity
-      );
-
-
-  const sumMovement =
-    type =>
-      movements
+    const salesCash =
+      sales
         .filter(
-          movement =>
-            movement.type ===
-            type
+          sale =>
+            isCashMethod(
+              sale.paymentMethod
+            )
         )
         .reduce(
-          (
-            sum,
-            movement
-          ) =>
-            sum +
-            parseAmount(
-              movement.amount
-            ),
-          0
-        );
-
-
-  const otherIncome =
-    sumMovement(
-      'other_income'
-    );
-
-  const expenses =
-    sumMovement(
-      'expense'
-    );
-
-  const withdrawals =
-    sumMovement(
-      'withdrawal'
-    );
-
-
-  const openingCash =
-    parseAmount(
-      shift.openingCash
-    );
-
-
-  const expectedCash =
-    openingCash +
-    membershipsCash +
-    salesCash +
-    otherIncome -
-    expenses -
-    withdrawals;
-
-
-  const paymentMethods =
-    {};
-
-
-  const addMethod =
-    (
-      method,
-      amount,
-      source
-    ) => {
-
-      const key =
-        normalizeMethod(
-          method
-        ) ||
-        'otro';
-
-      if (
-        !paymentMethods[
-          key
-        ]
-      ) {
-
-        paymentMethods[
-          key
-        ] = {
-          method:
-            key,
-
-          memberships:
-            0,
-
-          sales:
-            0,
-
-          total:
-            0
-        };
-
-      }
-
-      paymentMethods[
-        key
-      ][source] +=
-        parseAmount(
-          amount
-        );
-
-      paymentMethods[
-        key
-      ].total +=
-        parseAmount(
-          amount
-        );
-
-    };
-
-
-  payments.forEach(
-    payment =>
-      addMethod(
-        payment.paymentMethod ||
-        payment.method,
-        payment.amount,
-        'memberships'
-      )
-  );
-
-
-  sales.forEach(
-    sale =>
-      addMethod(
-        sale.paymentMethod,
-        sale.total,
-        'sales'
-      )
-  );
-
-
-  return {
-    openingCash,
-
-    memberships: {
-      total:
-        membershipsTotal,
-
-      cash:
-        membershipsCash,
-
-      count:
-        payments.length
-    },
-
-    sales: {
-      total:
-        salesTotal,
-
-      cash:
-        salesCash,
-
-      count:
-        sales.length,
-
-      itemCount:
-        sales.reduce(
           (
             sum,
             sale
           ) =>
             sum +
             parseAmount(
-              sale.itemCount
+              sale.total
             ),
           0
-        ),
+        );
 
-      products:
-        soldProducts
-    },
 
-    otherIncome,
-    expenses,
-    withdrawals,
+    // ==================================================
+    // PRODUCTOS VENDIDOS
+    // ==================================================
 
-    expectedCash,
+    const productsMap =
+      new Map();
 
-    paymentMethods,
 
-    payments,
-    sales,
-    movements,
+    sales.forEach(
+      sale => {
 
-    totalHandled:
-      membershipsTotal +
-      salesTotal +
-      otherIncome
+        (
+          Array.isArray(
+            sale.items
+          )
+            ? sale.items
+            : []
+        ).forEach(
+          item => {
+
+            const key =
+              item.productId ||
+              item.name ||
+              'producto';
+
+
+            const current =
+              productsMap.get(
+                key
+              ) ||
+              {
+
+                productId:
+                  item.productId ||
+                  '',
+
+                name:
+                  item.name ||
+                  'Producto',
+
+                quantity:
+                  0,
+
+                revenue:
+                  0
+
+              };
+
+
+            current.quantity +=
+              parseAmount(
+                item.quantity
+              );
+
+
+            current.revenue +=
+              parseAmount(
+                item.subtotal ??
+                (
+                  parseAmount(
+                    item.unitPrice
+                  ) *
+                  parseAmount(
+                    item.quantity
+                  )
+                )
+              );
+
+
+            productsMap.set(
+              key,
+              current
+            );
+
+          }
+        );
+
+      }
+    );
+
+
+    const soldProducts =
+      Array.from(
+        productsMap.values()
+      )
+        .sort(
+          (
+            first,
+            second
+          ) =>
+            second.quantity -
+            first.quantity
+        );
+
+
+    // ==================================================
+    // MOVIMIENTOS
+    // ==================================================
+
+    const sumMovement =
+      type =>
+        movements
+          .filter(
+            movement =>
+              movement.type ===
+              type
+          )
+          .reduce(
+            (
+              sum,
+              movement
+            ) =>
+              sum +
+              parseAmount(
+                movement.amount
+              ),
+            0
+          );
+
+
+    const otherIncome =
+      sumMovement(
+        'other_income'
+      );
+
+
+    const expenses =
+      sumMovement(
+        'expense'
+      );
+
+
+    const withdrawals =
+      sumMovement(
+        'withdrawal'
+      );
+
+
+    // ==================================================
+    // EFECTIVO ESPERADO
+    // ==================================================
+
+    const openingCash =
+      parseAmount(
+        shift.openingCash
+      );
+
+
+    const expectedCash =
+      openingCash +
+      membershipsCash +
+      salesCash +
+      otherIncome -
+      expenses -
+      withdrawals;
+
+
+    // ==================================================
+    // MÉTODOS DE PAGO
+    // ==================================================
+
+    const paymentMethods =
+      {};
+
+
+    const addMethod =
+      (
+        method,
+        amount,
+        source
+      ) => {
+
+        const key =
+          normalizeMethod(
+            method
+          ) ||
+          'otro';
+
+
+        if (
+          !paymentMethods[
+            key
+          ]
+        ) {
+
+          paymentMethods[
+            key
+          ] = {
+
+            method:
+              key,
+
+            memberships:
+              0,
+
+            sales:
+              0,
+
+            total:
+              0
+
+          };
+
+        }
+
+
+        paymentMethods[
+          key
+        ][source] +=
+          parseAmount(
+            amount
+          );
+
+
+        paymentMethods[
+          key
+        ].total +=
+          parseAmount(
+            amount
+          );
+
+      };
+
+
+    payments.forEach(
+      payment =>
+        addMethod(
+          payment.paymentMethod ||
+          payment.method,
+          payment.amount,
+          'memberships'
+        )
+    );
+
+
+    sales.forEach(
+      sale =>
+        addMethod(
+          sale.paymentMethod,
+          sale.total,
+          'sales'
+        )
+    );
+
+
+    return {
+
+      openingCash,
+
+      memberships: {
+
+        total:
+          membershipsTotal,
+
+        cash:
+          membershipsCash,
+
+        count:
+          payments.length
+
+      },
+
+      sales: {
+
+        total:
+          salesTotal,
+
+        cash:
+          salesCash,
+
+        count:
+          sales.length,
+
+        itemCount:
+          sales.reduce(
+            (
+              sum,
+              sale
+            ) =>
+              sum +
+              parseAmount(
+                sale.itemCount
+              ),
+            0
+          ),
+
+        products:
+          soldProducts
+
+      },
+
+      otherIncome,
+
+      expenses,
+
+      withdrawals,
+
+      expectedCash,
+
+      paymentMethods,
+
+      payments,
+
+      sales,
+
+      movements,
+
+      totalHandled:
+        membershipsTotal +
+        salesTotal +
+        otherIncome
+
+    };
+
   };
-
-};
 
 
 // ======================================================
 // CERRAR TURNO
 // ======================================================
 
-export const closeCashShift = ({
-  shiftId,
-  countedCash,
-  notes = '',
-  actor = null
-}) => {
+export const closeCashShift =
+  ({
+    shiftId,
+    countedCash,
+    notes = '',
+    actor = null
+  }) => {
 
-  const shifts =
-    getCashShifts();
+    const currentShifts =
+      getCashShifts();
 
-  const index =
-    shifts.findIndex(
-      shift =>
-        shift.id ===
-        shiftId
-    );
 
-  if (
-    index <
-    0
-  ) {
+    const current =
+      currentShifts.find(
+        shift =>
+          shift.id ===
+          shiftId
+      );
 
-    throw new Error(
-      'No se encontró el turno de caja.'
-    );
 
-  }
+    if (!current) {
 
-  if (
-    shifts[index].status !==
-    'open'
-  ) {
+      throw new Error(
+        'No se encontró el turno de caja.'
+      );
 
-    throw new Error(
-      'Este turno ya está cerrado.'
-    );
+    }
 
-  }
 
-  const employee =
-    normalizeActor(
-      actor ||
-      getStoredSession()
-    );
+    if (
+      current.status !==
+      'open'
+    ) {
 
-  if (
-    shifts[index].employee?.id &&
-    employee?.id &&
-    shifts[index].employee.id !==
-      employee.id &&
-    ![
-      'owner',
-      'admin'
-    ].includes(
-      employee.role
-    )
-  ) {
+      throw new Error(
+        'Este turno ya está cerrado.'
+      );
 
-    throw new Error(
-      'Solo el responsable del turno o un administrador puede cerrarlo.'
-    );
+    }
 
-  }
 
-  const numericCounted =
-    parseAmount(
-      countedCash
-    );
+    const employee =
+      normalizeActor(
+        actor ||
+        getStoredSession()
+      );
 
-  if (
-    numericCounted <
-    0
-  ) {
 
-    throw new Error(
-      'El efectivo contado no puede ser negativo.'
-    );
+    if (
+      current.employee?.id &&
+      employee?.id &&
+      current.employee.id !==
+        employee.id &&
+      ![
+        'owner',
+        'admin'
+      ].includes(
+        employee.role
+      )
+    ) {
 
-  }
+      throw new Error(
+        'Solo el responsable del turno o un administrador puede cerrarlo.'
+      );
 
-  const summary =
-    calculateCashShiftSummary(
-      shifts[index]
-    );
+    }
 
-  const now =
-    new Date()
-      .toISOString();
 
-  const closed = {
-    ...shifts[index],
+    const numericCounted =
+      parseAmount(
+        countedCash
+      );
 
-    status:
-      'closed',
 
-    closedAt:
-      now,
+    if (
+      numericCounted <
+      0
+    ) {
 
-    countedCash:
-      numericCounted,
+      throw new Error(
+        'El efectivo contado no puede ser negativo.'
+      );
 
-    expectedCash:
-      Number(
-        summary.expectedCash.toFixed(
-          2
-        )
-      ),
+    }
 
-    difference:
-      Number(
-        (
-          numericCounted -
-          summary.expectedCash
-        ).toFixed(
-          2
-        )
-      ),
 
-    closingNotes:
-      String(
-        notes ||
-        ''
-      ).trim(),
+    const summary =
+      calculateCashShiftSummary(
+        current
+      );
 
-    closedBy:
-      employee,
 
-    closeSnapshot: {
-      openingCash:
-        summary.openingCash,
+    const now =
+      new Date()
+        .toISOString();
 
-      memberships:
-        summary.memberships,
 
-      sales:
-        summary.sales,
+    const closed = {
 
-      soldProducts:
-        summary.sales?.products ||
-        [],
+      ...current,
 
-      otherIncome:
-        summary.otherIncome,
+      status:
+        'closed',
 
-      expenses:
-        summary.expenses,
+      closedAt:
+        now,
 
-      withdrawals:
-        summary.withdrawals,
+      countedCash:
+        numericCounted,
 
       expectedCash:
-        summary.expectedCash,
+        Number(
+          summary.expectedCash.toFixed(
+            2
+          )
+        ),
 
-      totalHandled:
-        summary.totalHandled,
+      difference:
+        Number(
+          (
+            numericCounted -
+            summary.expectedCash
+          ).toFixed(
+            2
+          )
+        ),
 
-      paymentMethods:
-        summary.paymentMethods
-    },
+      closingNotes:
+        String(
+          notes ||
+          ''
+        ).trim(),
 
-    updatedAt:
-      now
+      closedBy:
+        employee,
+
+      closeSnapshot: {
+
+        openingCash:
+          summary.openingCash,
+
+        memberships:
+          summary.memberships,
+
+        sales:
+          summary.sales,
+
+        soldProducts:
+          summary.sales?.products ||
+          [],
+
+        otherIncome:
+          summary.otherIncome,
+
+        expenses:
+          summary.expenses,
+
+        withdrawals:
+          summary.withdrawals,
+
+        expectedCash:
+          summary.expectedCash,
+
+        totalHandled:
+          summary.totalHandled,
+
+        paymentMethods:
+          summary.paymentMethods
+
+      },
+
+      updatedAt:
+        now
+
+    };
+
+
+    // ==================================================
+    // LOCALSTORAGE
+    // ==================================================
+
+    const allShifts =
+      readArray(
+        CASH_SHIFTS_KEY
+      );
+
+
+    const index =
+      allShifts.findIndex(
+        shift =>
+          shift.id ===
+            shiftId &&
+          shift.gymId ===
+            current.gymId
+      );
+
+
+    if (
+      index <
+      0
+    ) {
+
+      throw new Error(
+        'No se encontró el turno almacenado.'
+      );
+
+    }
+
+
+    allShifts[
+      index
+    ] =
+      closed;
+
+
+    saveArray(
+      CASH_SHIFTS_KEY,
+      allShifts
+    );
+
+
+    // ==================================================
+    // INDEXEDDB + SYNCQUEUE
+    // ==================================================
+
+    void saveOfflineCashShift(
+      closed
+    )
+      .then(
+        saved => {
+
+          console.log(
+            '✅ Cierre de caja respaldado offline:',
+            saved
+          );
+
+        }
+      )
+      .catch(
+        error => {
+
+          console.error(
+            '❌ No se pudo respaldar el cierre de caja:',
+            error
+          );
+
+        }
+      );
+
+
+    return closed;
+
   };
-
-  shifts[index] =
-    closed;
-
-  saveArray(
-    CASH_SHIFTS_KEY,
-    shifts
-  );
-
-  return closed;
-
-};
 
 
 // ======================================================
@@ -1310,9 +2023,7 @@ export const closeCashShift = ({
 // ======================================================
 
 export const getEmployeeCashSummary =
-  (
-    userId
-  ) => {
+  userId => {
 
     const shifts =
       getCashShifts()
@@ -1323,6 +2034,7 @@ export const getEmployeeCashSummary =
               userId
         );
 
+
     const closed =
       shifts.filter(
         shift =>
@@ -1330,7 +2042,9 @@ export const getEmployeeCashSummary =
           'closed'
       );
 
+
     return {
+
       shiftCount:
         shifts.length,
 
@@ -1362,24 +2076,44 @@ export const getEmployeeCashSummary =
             ),
           0
         )
+
     };
 
   };
 
 
+// ======================================================
+// EXPORT
+// ======================================================
+
 export default {
+
   CASH_SHIFTS_KEY,
+
   CASH_MOVEMENTS_KEY,
+
   getCashShifts,
+
   getCashMovements,
+
   getOpenCashShiftForUser,
+
   getOpenCashShiftForCurrentUser,
+
   openCashShift,
+
   createCashMovement,
+
   getShiftPayments,
+
   getShiftSales,
+
   getShiftMovements,
+
   calculateCashShiftSummary,
+
   closeCashShift,
+
   getEmployeeCashSummary
+
 };

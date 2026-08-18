@@ -53,6 +53,15 @@ import {
 
 
 // ======================================================
+// SUPABASE
+// ======================================================
+
+import {
+  testSupabaseConfiguration
+} from './services/supabaseConnectionService.js';
+
+
+// ======================================================
 // INICIALIZAR BASE LOCAL EXISTENTE
 // ======================================================
 //
@@ -62,6 +71,73 @@ import {
 // ======================================================
 
 initializeLocalDatabase();
+
+
+// ======================================================
+// PROBAR CONEXIÓN CON SUPABASE
+// ======================================================
+
+const testSupabaseConnection =
+  async () => {
+
+    try {
+
+      const result =
+        await testSupabaseConfiguration();
+
+
+      if (
+        result.success
+      ) {
+
+        console.log(
+          '☁️ Supabase conectado correctamente:',
+          {
+            success:
+              result.success,
+
+            configured:
+              result.configured,
+
+            hasSession:
+              result.hasSession
+          }
+        );
+
+
+        return result;
+
+      }
+
+
+      console.error(
+        '❌ Falló conexión con Supabase:',
+        result
+      );
+
+
+      return result;
+
+    } catch (error) {
+
+      console.error(
+        '❌ Error probando conexión con Supabase:',
+        error
+      );
+
+
+      return {
+
+        success:
+          false,
+
+        error
+
+      };
+
+    }
+
+  };
 
 
 // ======================================================
@@ -105,7 +181,7 @@ const initializeOfflineSystem =
       // 2. RECUPERAR OPERACIONES INTERRUMPIDAS
       // ==================================================
       //
-      // Por ejemplo:
+      // Ejemplo:
       //
       // pending
       //    ↓
@@ -113,7 +189,8 @@ const initializeOfflineSystem =
       //    ↓
       // navegador cerrado
       //
-      // Al volver a abrir debe regresar a pending.
+      // Cuando NEXGYM vuelve a iniciar,
+      // esas operaciones regresan a pending.
       //
       // ==================================================
 
@@ -148,7 +225,36 @@ const initializeOfflineSystem =
 
 
       // ==================================================
-      // 4. ESTADO ACTUAL DE LA COLA
+      // 4. PROBAR SUPABASE
+      // ==================================================
+      //
+      // Por ahora esta prueba solamente confirma que:
+      //
+      // - .env.local funciona
+      // - supabaseClient está configurado
+      // - Supabase Auth responde
+      //
+      // Todavía NO sincronizamos entidades.
+      //
+      // ==================================================
+
+      if (
+        networkStatus?.online
+      ) {
+
+        await testSupabaseConnection();
+
+      } else {
+
+        console.log(
+          '📴 Supabase no se prueba porque NEXGYM inició sin conexión.'
+        );
+
+      }
+
+
+      // ==================================================
+      // 5. ESTADO ACTUAL DE LA COLA
       // ==================================================
 
       const queueCounts =
@@ -162,14 +268,29 @@ const initializeOfflineSystem =
 
 
       // ==================================================
-      // 5. SYNC MANAGER
+      // 6. SYNC MANAGER
       // ==================================================
       //
-      // Todavía NO existen handlers de Supabase.
+      // IMPORTANTE:
       //
-      // Por eso cualquier operación seguirá pending.
+      // Aún no registramos los handlers remotos
+      // de Supabase para:
       //
-      // Esto es intencional.
+      // member
+      // payment
+      // subscription_history
+      // attendance
+      // access_log
+      // product
+      // inventory_movement
+      // sale
+      // cash_shift
+      // cash_movement
+      //
+      // Por lo tanto las operaciones permanecen
+      // en estado pending.
+      //
+      // Esto es correcto en esta etapa.
       //
       // ==================================================
 
@@ -182,6 +303,10 @@ const initializeOfflineSystem =
         syncManagerState
       );
 
+
+      // ==================================================
+      // 7. FINAL
+      // ==================================================
 
       console.log(
         '✅ Sistema offline NEXGYM inicializado correctamente.'
@@ -200,7 +325,7 @@ const initializeOfflineSystem =
 
 
 // ======================================================
-// EJECUTAR SISTEMA OFFLINE
+// EJECUTAR SISTEMA
 // ======================================================
 
 initializeOfflineSystem();
