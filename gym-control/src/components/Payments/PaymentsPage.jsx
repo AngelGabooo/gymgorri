@@ -71,6 +71,12 @@ import {
   getOpenCashShiftForCurrentUser
 } from '../../services/cashService';
 
+import {
+  mirrorBillingOperationOffline,
+  mirrorPaymentDeletionOffline,
+  mirrorSubscriptionDeletionOffline
+} from '../../offline/services/offlineBillingService.js';
+
 
 // ======================================================
 // STORAGE
@@ -1620,6 +1626,16 @@ const PaymentsPage = () => {
               'PAY'
             ),
 
+          gymId:
+            currentSession?.gymId ||
+            selectedMember?.gymId ||
+            null,
+
+          gymCode:
+            currentSession?.gymCode ||
+            selectedMember?.gymCode ||
+            null,
+
           cashShiftId:
             openCashShift?.id ||
             null,
@@ -1777,12 +1793,22 @@ const PaymentsPage = () => {
           );
 
 
-        history.unshift({
+        const subscriptionHistoryRecord = {
 
           id:
             createId(
               'SUBH'
             ),
+
+          gymId:
+            currentSession?.gymId ||
+            selectedMember?.gymId ||
+            null,
+
+          gymCode:
+            currentSession?.gymCode ||
+            selectedMember?.gymCode ||
+            null,
 
           memberId:
             selectedMember.id,
@@ -1811,15 +1837,69 @@ const PaymentsPage = () => {
             '',
 
           createdAt:
+            now,
+
+          updatedAt:
             now
 
-        });
+        };
+
+
+        history.unshift(
+          subscriptionHistoryRecord
+        );
 
 
         saveLocalArray(
           SUBSCRIPTION_HISTORY_KEY,
           history
         );
+
+
+        // ==================================================
+        // RESPALDAR PAGO + RENOVACIÓN EN INDEXEDDB
+        // ==================================================
+
+        void mirrorBillingOperationOffline({
+
+          payment:
+            paymentRecord,
+
+          subscription:
+            subscriptionHistoryRecord,
+
+          gymId:
+            currentSession?.gymId ||
+            selectedMember?.gymId ||
+            null,
+
+          session:
+            currentSession,
+
+          member:
+            updatedMember
+
+        })
+          .then(
+            result => {
+
+              console.log(
+                '✅ Pago y renovación respaldados offline:',
+                result
+              );
+
+            }
+          )
+          .catch(
+            error => {
+
+              console.error(
+                '❌ Error respaldando renovación offline:',
+                error
+              );
+
+            }
+          );
 
 
         console.log(
@@ -1911,6 +1991,25 @@ const PaymentsPage = () => {
       );
 
 
+      // ==================================================
+      // RESPALDAR ELIMINACIÓN DEL PAGO EN INDEXEDDB
+      // ==================================================
+
+      void mirrorPaymentDeletionOffline({
+
+        payment,
+
+        gymId:
+          currentSession?.gymId ||
+          payment?.gymId ||
+          null,
+
+        session:
+          currentSession
+
+      });
+
+
       // También quitamos el movimiento del historial
       // de suscripción que fue creado por ese pago.
       // La suscripción ACTUAL del miembro no se revierte
@@ -1920,6 +2019,15 @@ const PaymentsPage = () => {
         readLocalArray(
           SUBSCRIPTION_HISTORY_KEY
         );
+
+
+      const relatedSubscriptionHistory =
+        history.find(
+          item =>
+            item.paymentId ===
+            payment.id
+        ) ||
+        null;
 
 
       const nextHistory =
@@ -1934,6 +2042,32 @@ const PaymentsPage = () => {
         SUBSCRIPTION_HISTORY_KEY,
         nextHistory
       );
+
+
+      // ==================================================
+      // RESPALDAR ELIMINACIÓN DEL HISTORIAL EN INDEXEDDB
+      // ==================================================
+
+      if (
+        relatedSubscriptionHistory
+      ) {
+
+        void mirrorSubscriptionDeletionOffline({
+
+          subscription:
+            relatedSubscriptionHistory,
+
+          gymId:
+            currentSession?.gymId ||
+            relatedSubscriptionHistory?.gymId ||
+            null,
+
+          session:
+            currentSession
+
+        });
+
+      }
 
 
       setPayments(
@@ -1951,7 +2085,6 @@ const PaymentsPage = () => {
       );
 
     };
-
 
   const requestDeletePayment =
     payment => {

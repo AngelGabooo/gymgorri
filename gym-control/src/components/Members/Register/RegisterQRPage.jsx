@@ -57,6 +57,10 @@ import {
   addCredentialHistoryEvent
 } from '../../../services/credentialHistory';
 
+import {
+  mirrorBillingOperationOffline
+} from '../../../offline/services/offlineBillingService.js';
+
 
 const PAYMENTS_KEY = 'gym_control_payments';
 const SUBSCRIPTION_HISTORY_KEY = 'gym_control_subscription_history';
@@ -498,32 +502,55 @@ const RegisterQRPage = () => {
       // ====================================================
 
       const payments =
-        readLocalArray(PAYMENTS_KEY);
+        readLocalArray(
+          PAYMENTS_KEY
+        );
 
       // Evitar duplicar el pago si por alguna razón
       // el usuario presiona Finalizar más de una vez.
       const existingInitialPayment =
         payments.find(
-          (payment) =>
-            payment.memberId === memberId &&
-            payment.type === 'subscription_initial'
+          payment =>
+            payment.memberId ===
+              memberId &&
+            payment.type ===
+              'subscription_initial'
         );
 
       let paymentId =
-        existingInitialPayment?.id || null;
+        existingInitialPayment?.id ||
+        null;
 
-      if (existingInitialPayment) {
-        setLastPayment(existingInitialPayment);
+      let paymentRecordForOffline =
+        existingInitialPayment ||
+        null;
+
+
+      if (
+        existingInitialPayment
+      ) {
+
+        setLastPayment(
+          existingInitialPayment
+        );
+
       }
 
-      if (!existingInitialPayment) {
+
+      if (
+        !existingInitialPayment
+      ) {
+
         const memberName =
-          `${finalMember.firstName || ''} ${finalMember.lastName || ''}`.trim() ||
+          `${finalMember.firstName || ''} ${finalMember.lastName || ''}`
+            .trim() ||
           'Miembro';
+
 
         const paymentMethod =
           subscriptionData.paymentMethod ||
           'no_registrado';
+
 
         const planAmount =
           Number(
@@ -532,25 +559,44 @@ const RegisterQRPage = () => {
             0
           );
 
+
         const receivedAmount =
-          paymentMethod === 'efectivo'
+          paymentMethod ===
+            'efectivo'
             ? Number(
                 subscriptionData.receivedAmount ??
                 planAmount
               )
             : planAmount;
 
+
         const change =
-          paymentMethod === 'efectivo'
+          paymentMethod ===
+            'efectivo'
             ? Number(
                 subscriptionData.change ||
                 0
               )
             : 0;
 
+
         const paymentRecord = {
+
           id:
-            createLocalId(settings?.receiptPrefix || 'PAY'),
+            createLocalId(
+              settings?.receiptPrefix ||
+              'PAY'
+            ),
+
+          gymId:
+            currentSession?.gymId ||
+            finalMember?.gymId ||
+            null,
+
+          gymCode:
+            currentSession?.gymCode ||
+            finalMember?.gymCode ||
+            null,
 
           memberId,
 
@@ -589,30 +635,40 @@ const RegisterQRPage = () => {
           paymentMethod,
 
           amount:
-            planAmount.toFixed(2),
+            planAmount.toFixed(
+              2
+            ),
 
           originalAmount:
             Number(
               subscriptionData.originalAmount ??
               subscriptionData.price ??
               planAmount
-            ).toFixed(2),
+            ).toFixed(
+              2
+            ),
 
           discountAmount:
             Number(
               subscriptionData.discountAmount ||
               0
-            ).toFixed(2),
+            ).toFixed(
+              2
+            ),
 
           promotion:
             subscriptionData.promotion ||
             null,
 
           receivedAmount:
-            receivedAmount.toFixed(2),
+            receivedAmount.toFixed(
+              2
+            ),
 
           change:
-            change.toFixed(2),
+            change.toFixed(
+              2
+            ),
 
           reference:
             subscriptionData.reference ||
@@ -632,24 +688,40 @@ const RegisterQRPage = () => {
           createdAt:
             now,
 
+          updatedAt:
+            now,
+
           date:
             now
+
         };
+
 
         payments.unshift(
           paymentRecord
         );
+
 
         saveLocalArray(
           PAYMENTS_KEY,
           payments
         );
 
+
         paymentId =
           paymentRecord.id;
 
-        setLastPayment(paymentRecord);
+
+        paymentRecordForOffline =
+          paymentRecord;
+
+
+        setLastPayment(
+          paymentRecord
+        );
+
       }
+
 
       // ====================================================
       // HISTORIAL DE SUSCRIPCIÓN INICIAL
@@ -660,22 +732,48 @@ const RegisterQRPage = () => {
           SUBSCRIPTION_HISTORY_KEY
         );
 
+
       const existingInitialHistory =
         history.find(
-          (record) =>
-            record.memberId === memberId &&
-            record.type === 'initial'
+          record =>
+            record.memberId ===
+              memberId &&
+            record.type ===
+              'initial'
         );
 
-      if (!existingInitialHistory) {
-        history.unshift({
+
+      let subscriptionHistoryForOffline =
+        existingInitialHistory ||
+        null;
+
+
+      if (
+        !existingInitialHistory
+      ) {
+
+        const subscriptionHistoryRecord = {
+
           id:
-            createLocalId('SUBH'),
+            createLocalId(
+              'SUBH'
+            ),
+
+          gymId:
+            currentSession?.gymId ||
+            finalMember?.gymId ||
+            null,
+
+          gymCode:
+            currentSession?.gymCode ||
+            finalMember?.gymCode ||
+            null,
 
           memberId,
 
           memberName:
-            `${finalMember.firstName || ''} ${finalMember.lastName || ''}`.trim() ||
+            `${finalMember.firstName || ''} ${finalMember.lastName || ''}`
+              .trim() ||
             'Miembro',
 
           type:
@@ -698,14 +796,76 @@ const RegisterQRPage = () => {
             '',
 
           createdAt:
+            now,
+
+          updatedAt:
             now
-        });
+
+        };
+
+
+        history.unshift(
+          subscriptionHistoryRecord
+        );
+
 
         saveLocalArray(
           SUBSCRIPTION_HISTORY_KEY,
           history
         );
+
+
+        subscriptionHistoryForOffline =
+          subscriptionHistoryRecord;
+
       }
+
+
+      // ====================================================
+      // RESPALDAR PAGO + SUSCRIPCIÓN EN INDEXEDDB
+      // ====================================================
+
+      void mirrorBillingOperationOffline({
+
+        payment:
+          paymentRecordForOffline,
+
+        subscription:
+          subscriptionHistoryForOffline,
+
+        gymId:
+          currentSession?.gymId ||
+          finalMember?.gymId ||
+          null,
+
+        session:
+          currentSession,
+
+        member:
+          finalMember
+
+      })
+        .then(
+          result => {
+
+            console.log(
+              '✅ Operación inicial respaldada offline:',
+              result
+            );
+
+          }
+        )
+        .catch(
+          error => {
+
+            console.error(
+              '❌ Error respaldando pago/suscripción offline:',
+              error
+            );
+
+          }
+        );
+
 
       console.log(
         '✅ Miembro registrado:',

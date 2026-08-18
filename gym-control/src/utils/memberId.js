@@ -1,5 +1,9 @@
 // src/utils/memberId.js
 
+import {
+  saveOfflineMember
+} from '../offline/repositories/memberRepository.js';
+
 
 // ======================================================
 // STORAGE
@@ -1052,7 +1056,10 @@ export const saveMember = (
     allMembers.findIndex(
       item => {
 
-        // Multi-gimnasio
+        // ==================================================
+        // MULTI-GIMNASIO
+        // ==================================================
+
         if (gymId) {
 
           return (
@@ -1065,7 +1072,10 @@ export const saveMember = (
         }
 
 
-        // Legacy
+        // ==================================================
+        // LEGACY
+        // ==================================================
+
         return (
           item.id ===
           normalizedMember.id
@@ -1074,6 +1084,10 @@ export const saveMember = (
       }
     );
 
+
+  // ====================================================
+  // ACTUALIZAR O INSERTAR EN LOCALSTORAGE
+  // ====================================================
 
   if (
     index >=
@@ -1094,15 +1108,98 @@ export const saveMember = (
   }
 
 
+  // ====================================================
+  // 1. GUARDAR EN LOCALSTORAGE
+  // ====================================================
+  //
+  // Conservamos esto porque el sistema actual todavía
+  // depende de localStorage.
+  //
+  // ====================================================
+
   saveAllStoredMembers(
     allMembers
   );
 
 
+  // ====================================================
+  // 2. CONFIRMAR CONTADOR
+  // ====================================================
+
   confirmMemberId(
     normalizedMember.id
   );
 
+
+  // ====================================================
+  // 3. GUARDAR EN INDEXEDDB + SYNCQUEUE
+  // ====================================================
+  //
+  // IMPORTANTE:
+  //
+  // No convertimos saveMember() en async.
+  //
+  // Muchas pantallas del sistema ya usan esta función
+  // de manera síncrona.
+  //
+  // IndexedDB se actualiza en paralelo.
+  //
+  // Si IndexedDB falla, localStorage ya tiene al miembro
+  // y el registro normal NO se rompe.
+  //
+  // ====================================================
+
+  if (
+    normalizedMember.gymId
+  ) {
+
+    void saveOfflineMember(
+      normalizedMember
+    )
+      .then(
+        offlineMember => {
+
+          console.log(
+            '✅ Miembro respaldado en IndexedDB:',
+            {
+
+              gymId:
+                offlineMember.gymId,
+
+              memberId:
+                offlineMember.id,
+
+              syncStatus:
+                offlineMember.syncStatus
+
+            }
+          );
+
+        }
+      )
+      .catch(
+        error => {
+
+          console.error(
+            '❌ No se pudo respaldar el miembro en IndexedDB:',
+            error
+          );
+
+        }
+      );
+
+  } else {
+
+    console.warn(
+      '⚠️ Miembro guardado en modo legacy. No se agregó a IndexedDB porque no existe gymId.'
+    );
+
+  }
+
+
+  // ====================================================
+  // 4. DEVOLVER COMO SIEMPRE
+  // ====================================================
 
   return normalizedMember;
 
