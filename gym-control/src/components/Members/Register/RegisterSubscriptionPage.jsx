@@ -38,6 +38,10 @@ import {
   getAvailablePromotions
 } from '../../../services/promotionService';
 
+import {
+  calculateSubscriptionEndDate
+} from '../../../utils/subscriptionDateUtils.js';
+
 
 // ======================================================
 // MESES
@@ -481,99 +485,27 @@ const RegisterSubscriptionPage = () => {
   // ======================================================
   // CALCULAR VENCIMIENTO
   // ======================================================
+  //
+  // REGLA NEXGYM:
+  //
+  // 7 días: 18 ago -> 25 ago
+  // 15 días: 18 ago -> 02 sep
+  // mensual: 18 ago -> 18 sep
+  // anual: 18 ago 2026 -> 18 ago 2027
+  //
+  // El último día permanece válido hasta las 11:59 p. m.
+  //
+  // ======================================================
 
   const calculateEndDate = (
     plan
   ) => {
 
-    const start =
-      new Date();
-
-    start.setHours(
-      12,
-      0,
-      0,
-      0
-    );
-
-
     const end =
-      new Date(
-        start
+      calculateSubscriptionEndDate(
+        new Date(),
+        plan
       );
-
-
-    const planId =
-      String(
-        plan?.id ||
-        ''
-      ).toLowerCase();
-
-
-    // Mensual = misma fecha del mes siguiente.
-    // Ejemplo: 14 ago 2026 -> 14 sep 2026.
-    if (
-      planId ===
-      'mensual'
-    ) {
-
-      const originalDay =
-        end.getDate();
-
-      end.setDate(1);
-      end.setMonth(
-        end.getMonth() +
-        1
-      );
-
-      const lastDayOfTargetMonth =
-        new Date(
-          end.getFullYear(),
-          end.getMonth() + 1,
-          0
-        ).getDate();
-
-      end.setDate(
-        Math.min(
-          originalDay,
-          lastDayOfTargetMonth
-        )
-      );
-
-      return formatDate(
-        end
-      );
-    }
-
-
-    // Anual = misma fecha del año siguiente.
-    // Ejemplo: 14 ago 2026 -> 14 ago 2027.
-    if (
-      planId ===
-      'anual'
-    ) {
-
-      end.setFullYear(
-        end.getFullYear() +
-        1
-      );
-
-      return formatDate(
-        end
-      );
-    }
-
-
-    // Planes por días: se suman exactamente los días configurados.
-    // 7 días: 14 ago -> 21 ago.
-    // 15 días: 14 ago -> 29 ago.
-    end.setDate(
-      end.getDate() +
-      Number(
-        plan?.days ||
-        0
-      )
-    );
 
 
     return formatDate(

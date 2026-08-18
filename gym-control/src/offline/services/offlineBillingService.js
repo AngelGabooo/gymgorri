@@ -12,6 +12,35 @@ import {
 
 
 // ======================================================
+// NORMALIZAR TEXTO
+// ======================================================
+
+const normalizeId =
+  value => {
+
+    if (
+      value === null ||
+      value === undefined
+    ) {
+
+      return null;
+
+    }
+
+
+    const text =
+      String(
+        value
+      ).trim();
+
+
+    return text ||
+      null;
+
+  };
+
+
+// ======================================================
 // RESOLVER GIMNASIO
 // ======================================================
 
@@ -22,7 +51,7 @@ const resolveGymId = ({
   record = null
 } = {}) => {
 
-  return (
+  return normalizeId(
     gymId ||
     record?.gymId ||
     member?.gymId ||
@@ -31,6 +60,55 @@ const resolveGymId = ({
   );
 
 };
+
+
+// ======================================================
+// VALIDAR PERTENENCIA AL GIMNASIO
+// ======================================================
+
+const assertSameGym =
+  (
+    resolvedGymId,
+    {
+      session = null,
+      member = null,
+      record = null
+    } = {}
+  ) => {
+
+    const candidates = [
+      session?.gymId,
+      member?.gymId,
+      record?.gymId
+    ]
+      .map(
+        normalizeId
+      )
+      .filter(
+        Boolean
+      );
+
+
+    const conflict =
+      candidates.find(
+        candidate =>
+          candidate !==
+          resolvedGymId
+      );
+
+
+    if (conflict) {
+
+      throw new Error(
+        'La operación de cobro contiene datos de otro gimnasio.'
+      );
+
+    }
+
+
+    return true;
+
+  };
 
 
 // ======================================================
@@ -72,19 +150,51 @@ export const preparePaymentForOffline = ({
   }
 
 
+  assertSameGym(
+    resolvedGymId,
+    {
+      session,
+      member,
+      record:
+        payment
+    }
+  );
+
+
+  const memberId =
+    normalizeId(
+      payment.memberId ||
+      member?.id ||
+      null
+    );
+
+
+  if (!memberId) {
+
+    throw new Error(
+      'El pago no contiene memberId.'
+    );
+
+  }
+
+
   return {
 
     ...payment,
 
-    gymId:
+    id:
       String(
-        resolvedGymId
+        payment.id
       ),
 
-    memberId:
-      payment.memberId ||
-      member?.id ||
-      null,
+    gymId:
+      resolvedGymId,
+
+    memberId,
+
+    status:
+      payment.status ||
+      'completed',
 
     updatedAt:
       payment.updatedAt ||
@@ -136,10 +246,23 @@ export const prepareSubscriptionForOffline = ({
   }
 
 
+  assertSameGym(
+    resolvedGymId,
+    {
+      session,
+      member,
+      record:
+        subscription
+    }
+  );
+
+
   const memberId =
-    subscription.memberId ||
-    member?.id ||
-    null;
+    normalizeId(
+      subscription.memberId ||
+      member?.id ||
+      null
+    );
 
 
   if (!memberId) {
@@ -155,15 +278,15 @@ export const prepareSubscriptionForOffline = ({
 
     ...subscription,
 
-    gymId:
+    id:
       String(
-        resolvedGymId
+        subscription.id
       ),
 
-    memberId:
-      String(
-        memberId
-      ),
+    gymId:
+      resolvedGymId,
+
+    memberId,
 
     updatedAt:
       subscription.updatedAt ||
@@ -439,10 +562,22 @@ export const mirrorPaymentDeletionOffline =
       }
 
 
+      assertSameGym(
+        resolvedGymId,
+        {
+          session,
+          record:
+            payment
+        }
+      );
+
+
       const result =
         await deleteOfflinePayment(
           resolvedGymId,
-          payment.id
+          String(
+            payment.id
+          )
         );
 
 
@@ -523,10 +658,22 @@ export const mirrorSubscriptionDeletionOffline =
       }
 
 
+      assertSameGym(
+        resolvedGymId,
+        {
+          session,
+          record:
+            subscription
+        }
+      );
+
+
       const result =
         await deleteOfflineSubscription(
           resolvedGymId,
-          subscription.id
+          String(
+            subscription.id
+          )
         );
 
 

@@ -63,6 +63,14 @@ import AdminAuthorizationModal
   from '../../common/AdminAuthorizationModal';
 
 
+import {
+  readGymScopedArray
+} from '../../../utils/gymScopedStorage.js';
+
+import {
+  getSubscriptionDaysRemaining
+} from '../../../utils/subscriptionDateUtils.js';
+
 // ======================================================
 // STORAGE DE ASISTENCIAS
 // ======================================================
@@ -78,16 +86,14 @@ const ATTENDANCE_KEY = 'gym_control_attendance';
 const PAYMENTS_KEY = 'gym_control_payments';
 const SUBSCRIPTION_HISTORY_KEY = 'gym_control_subscription_history';
 
-const readLocalArray = (key) => {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    console.error(`Error leyendo ${key}:`, error);
-    return [];
-  }
+const readLocalArray = (
+  key
+) => {
+
+  return readGymScopedArray(
+    key
+  );
+
 };
 
 const parseAttendanceDate = (value) => {
@@ -695,40 +701,34 @@ const MemberProfilePage = () => {
     };
 
 
-  // Calcular días restantes
-  // Conservamos la función original, pero ahora acepta todos los formatos
-  // de fecha que ya utiliza el sistema.
-  const calculateDaysRemaining = () => {
-    if (
-      !subscriptionData.endDate ||
-      subscriptionData.endDate === 'Fecha no disponible'
-    ) {
-      return 0;
-    }
+  // ======================================================
+  // DÍAS RESTANTES
+  // ======================================================
+  //
+  // Respeta la duración comercial configurada del plan.
+  //
+  // Ejemplo:
+  // inicio: 18 ago
+  // plan mensual: 30 días
+  // vencimiento: 18 sep, 11:59 p. m.
+  // al registrarse muestra: 30 días restantes
+  //
+  // ======================================================
 
-    try {
-      const endDate = parseSubscriptionDate(subscriptionData.endDate);
+  const daysRemaining =
+    getSubscriptionDaysRemaining({
+      startDate:
+        subscriptionData.startDate,
 
-      if (!endDate) {
-        return 0;
-      }
+      endDate:
+        subscriptionData.endDate,
 
-      const today = new Date();
+      planDays:
+        subscriptionData.days,
 
-      today.setHours(0, 0, 0, 0);
-      endDate.setHours(23, 59, 59, 999);
-
-      const diffTime = endDate.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      return diffDays > 0 ? diffDays : 0;
-    } catch (error) {
-      console.error('Error calculando días restantes:', error);
-      return 0;
-    }
-  };
-
-  const daysRemaining = calculateDaysRemaining();
+      now:
+        new Date()
+    });
 
   // ======================================================
   // ASISTENCIAS REALES DEL MIEMBRO

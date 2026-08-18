@@ -8,7 +8,8 @@ import {
   markSyncItemFailed,
   recoverProcessingSyncItems,
   getSyncQueueCounts,
-  clearSyncedQueueItems
+  clearSyncedQueueItems,
+  SYNC_QUEUE_UPDATE_EVENT
 } from './syncQueue.js';
 
 import {
@@ -26,42 +27,121 @@ export const SYNC_MANAGER_EVENT =
 
 
 // ======================================================
+// SESIÓN LOCAL
+// ======================================================
+//
+// Evitamos importar authService para no crear ciclos.
+// La sesión ya contiene gymId cuando el login cloud
+// fue exitoso.
+//
+// ======================================================
+
+const SESSION_KEY =
+  'gym_control_session';
+
+const AUTH_KEY =
+  'isAuthenticated';
+
+
+const getSessionSnapshot =
+  () => {
+
+    try {
+
+      if (
+        localStorage.getItem(
+          AUTH_KEY
+        ) !==
+        'true'
+      ) {
+
+        return null;
+
+      }
+
+
+      const raw =
+        localStorage.getItem(
+          SESSION_KEY
+        );
+
+
+      if (!raw) {
+
+        return null;
+
+      }
+
+
+      const parsed =
+        JSON.parse(
+          raw
+        );
+
+
+      return (
+        parsed &&
+        typeof parsed ===
+          'object'
+      )
+        ? parsed
+        : null;
+
+    } catch (
+      error
+    ) {
+
+      console.warn(
+        '⚠️ No se pudo leer la sesión para sincronización:',
+        error
+      );
+
+
+      return null;
+
+    }
+
+  };
+
+
+const getCurrentGymId =
+  () => {
+
+    const session =
+      getSessionSnapshot();
+
+
+    return session?.gymId
+      ? String(
+          session.gymId
+        )
+      : null;
+
+  };
+
+
+// ======================================================
 // ESTADO INTERNO
 // ======================================================
 
 let initialized =
   false;
 
-
 let syncing =
   false;
-
 
 let unsubscribeNetwork =
   null;
 
+let queueUpdateHandler =
+  null;
+
+let queueSyncTimer =
+  null;
+
 
 // ======================================================
-// HANDLERS DE SINCRONIZACIÓN
-// ======================================================
-//
-// Cada entidad tendrá posteriormente un handler.
-//
-// Ejemplo:
-//
-// member
-// payment
-// subscription_history
-//
-// Cuando conectemos Supabase registraremos:
-//
-// registerSyncHandler(
-//   'member',
-//   async item => {
-//      ...
-//   }
-// );
-//
+// HANDLERS
 // ======================================================
 
 const syncHandlers =
@@ -79,6 +159,9 @@ let syncManagerState = {
 
   syncing:
     false,
+
+  activeGymId:
+    null,
 
   lastSyncStartedAt:
     null,
@@ -150,7 +233,9 @@ const dispatchSyncManagerUpdate =
       counts =
         await getSyncQueueCounts();
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.warn(
         'No se pudieron obtener conteos de syncQueue:',
@@ -273,7 +358,7 @@ export const hasSyncHandler =
 
 
 // ======================================================
-// OBTENER ENTIDADES REGISTRADAS
+// ENTIDADES REGISTRADAS
 // ======================================================
 
 export const getRegisteredSyncEntities =
@@ -292,7 +377,8 @@ export const getRegisteredSyncEntities =
 
 const processSyncItem =
   async (
-    item
+    item,
+    activeGymId
   ) => {
 
     if (
@@ -315,10 +401,6 @@ const processSyncItem =
     }
 
 
-    // ==================================================
-    // SIN INTERNET
-    // ==================================================
-
     if (
       !isOnline()
     ) {
@@ -340,8 +422,51 @@ const processSyncItem =
 
 
     // ==================================================
-    // BUSCAR HANDLER
+    // AISLAMIENTO POR GIMNASIO
     // ==================================================
+
+    if (
+      !activeGymId ||
+      String(
+        item.gymId
+      ) !==
+      String(
+        activeGymId
+      )
+    ) {
+
+      console.warn(
+        '🔒 Operación omitida porque no pertenece al gimnasio actual:',
+        {
+          itemGymId:
+            item.gymId,
+
+          activeGymId,
+
+          entity:
+            item.entity,
+
+          entityId:
+            item.entityId
+        }
+      );
+
+
+      return {
+
+        success:
+          false,
+
+        skipped:
+          true,
+
+        reason:
+          'different_gym'
+
+      };
+
+    }
+
 
     const handler =
       syncHandlers.get(
@@ -349,18 +474,7 @@ const processSyncItem =
       );
 
 
-    /*
-     * IMPORTANTE:
-     *
-     * Si todavía no existe integración con Supabase,
-     * NO debemos marcar la operación como sincronizada.
-     *
-     * Se queda pending.
-     */
-
-    if (
-      !handler
-    ) {
+    if (!handler) {
 
       console.log(
         `⏳ Sin handler remoto para "${item.entity}". Se mantiene pendiente.`,
@@ -390,19 +504,13 @@ const processSyncItem =
     }
 
 
-    // ==================================================
-    // MARCAR PROCESSING
-    // ==================================================
-
     const processingItem =
       await markSyncItemProcessing(
         item.id
       );
 
 
-    if (
-      !processingItem
-    ) {
+    if (!processingItem) {
 
       return {
 
@@ -422,54 +530,40 @@ const processSyncItem =
 
     try {
 
-      // ==================================================
-      // EJECUTAR HANDLER REAL
-      // ==================================================
-
       const result =
         await handler(
           processingItem
         );
 
 
-      // ==================================================
-      // VALIDAR RESPUESTA
-      // ==================================================
-      //
-      // El handler debe devolver:
-      //
-      // {
-      //   success: true
-      // }
-      //
-      // No basta con que la Promise termine.
-      //
-      // ==================================================
-
       if (
         !result ||
         result.success !==
-        true
+          true
       ) {
 
-        const message =
-          result?.message ||
-          'El servidor no confirmó la sincronización.';
-
-
         throw new Error(
-          message
+          result?.message ||
+          'El servidor no confirmó la sincronización.'
         );
 
       }
 
 
-      // ==================================================
-      // MARCAR SYNCED
-      // ==================================================
-
       await markSyncItemSynced(
         processingItem.id
+      );
+
+
+      console.log(
+        `✅ ${processingItem.entity} sincronizado:`,
+        {
+          entityId:
+            processingItem.entityId,
+
+          operation:
+            processingItem.operation
+        }
       );
 
 
@@ -485,15 +579,27 @@ const processSyncItem =
 
       };
 
-    } catch (error) {
-
-      // ==================================================
-      // ERROR
-      // ==================================================
+    } catch (
+      error
+    ) {
 
       await markSyncItemFailed(
         processingItem.id,
         error
+      );
+
+
+      console.error(
+        `❌ Error sincronizando ${processingItem.entity}:`,
+        {
+          entityId:
+            processingItem.entityId,
+
+          operation:
+            processingItem.operation,
+
+          error
+        }
       );
 
 
@@ -523,29 +629,27 @@ export const synchronizePendingItems =
     options = {}
   ) => {
 
-    const {
-
-      gymId =
-        null,
-
-      clearSynced =
-        false
-
-    } = options;
+    const requestedGymId =
+      options?.gymId
+        ? String(
+            options.gymId
+          )
+        : null;
 
 
-    // ==================================================
-    // EVITAR DOS SINCRONIZACIONES SIMULTÁNEAS
-    // ==================================================
+    const activeGymId =
+      requestedGymId ||
+      getCurrentGymId();
+
+
+    const clearSynced =
+      options?.clearSynced ===
+      true;
+
 
     if (
       syncing
     ) {
-
-      console.log(
-        '⏳ Ya existe una sincronización en proceso.'
-      );
-
 
       return {
 
@@ -559,10 +663,6 @@ export const synchronizePendingItems =
 
     }
 
-
-    // ==================================================
-    // SIN INTERNET
-    // ==================================================
 
     if (
       !isOnline()
@@ -586,6 +686,35 @@ export const synchronizePendingItems =
     }
 
 
+    // ==================================================
+    // NO SINCRONIZAR SIN GYM ACTUAL
+    // ==================================================
+
+    if (
+      !activeGymId
+    ) {
+
+      console.log(
+        '🔐 syncManager en espera: todavía no hay gimnasio autenticado.'
+      );
+
+
+      return {
+
+        success:
+          false,
+
+        skipped:
+          true,
+
+        reason:
+          'no_active_gym'
+
+      };
+
+    }
+
+
     syncing =
       true;
 
@@ -601,6 +730,8 @@ export const synchronizePendingItems =
 
       syncing:
         true,
+
+      activeGymId,
 
       lastSyncStartedAt:
         startedAt,
@@ -628,20 +759,12 @@ export const synchronizePendingItems =
 
     try {
 
-      // ==================================================
-      // RECUPERAR PROCESSING VIEJOS
-      // ==================================================
-
       await recoverProcessingSyncItems();
 
 
-      // ==================================================
-      // LEER PENDIENTES
-      // ==================================================
-
       const pendingItems =
         await getPendingSyncItems(
-          gymId
+          activeGymId
         );
 
 
@@ -650,9 +773,8 @@ export const synchronizePendingItems =
         0
       ) {
 
-        console.log(
-          '✅ No hay operaciones pendientes de sincronización.'
-        );
+        syncing =
+          false;
 
 
         syncManagerState = {
@@ -662,6 +784,8 @@ export const synchronizePendingItems =
           syncing:
             false,
 
+          activeGymId,
+
           lastSyncCompletedAt:
             new Date()
               .toISOString()
@@ -669,17 +793,21 @@ export const synchronizePendingItems =
         };
 
 
-        syncing =
-          false;
-
-
         await dispatchSyncManagerUpdate();
+
+
+        console.log(
+          `✅ No hay operaciones pendientes para el gimnasio ${activeGymId}.`
+        );
 
 
         return {
 
           success:
             true,
+
+          gymId:
+            activeGymId,
 
           pending:
             0,
@@ -702,34 +830,14 @@ export const synchronizePendingItems =
 
 
       console.log(
-        `🔄 Procesando ${pendingItems.length} operación(es) pendiente(s)...`
+        `🔄 Procesando ${pendingItems.length} operación(es) pendiente(s) del gimnasio ${activeGymId}...`
       );
 
-
-      // ==================================================
-      // PROCESAR EN ORDEN
-      // ==================================================
-      //
-      // Usamos for...of intencionalmente.
-      //
-      // Así respetamos el orden:
-      //
-      // miembro
-      // pago
-      // suscripción
-      //
-      // y evitamos carreras innecesarias.
-      //
-      // ==================================================
 
       for (
         const item of
         pendingItems
       ) {
-
-        // =================================================
-        // INTERNET SE PERDIÓ A MEDIA SINCRONIZACIÓN
-        // =================================================
 
         if (
           !isOnline()
@@ -745,9 +853,36 @@ export const synchronizePendingItems =
         }
 
 
+        // Si el usuario cambió de gimnasio/sesión durante
+        // el ciclo, detenemos inmediatamente.
+        const currentGymId =
+          getCurrentGymId();
+
+
+        if (
+          !currentGymId ||
+          String(
+            currentGymId
+          ) !==
+          String(
+            activeGymId
+          )
+        ) {
+
+          console.warn(
+            '🔒 La sesión cambió durante la sincronización. Ciclo detenido.'
+          );
+
+
+          break;
+
+        }
+
+
         const result =
           await processSyncItem(
-            item
+            item,
+            activeGymId
           );
 
 
@@ -810,17 +945,20 @@ export const synchronizePendingItems =
       }
 
 
-      // ==================================================
-      // LIMPIAR SYNCED OPCIONALMENTE
-      // ==================================================
-
       if (
         clearSynced
       ) {
 
+        // La función actual limpia todos los synced.
+        // No la usamos automáticamente para preservar
+        // historial local de la cola.
         await clearSyncedQueueItems();
 
       }
+
+
+      syncing =
+        false;
 
 
       syncManagerState = {
@@ -830,15 +968,13 @@ export const synchronizePendingItems =
         syncing:
           false,
 
+        activeGymId,
+
         lastSyncCompletedAt:
           new Date()
             .toISOString()
 
       };
-
-
-      syncing =
-        false;
 
 
       await dispatchSyncManagerUpdate();
@@ -847,6 +983,9 @@ export const synchronizePendingItems =
       console.log(
         '✅ Ciclo de sincronización terminado:',
         {
+          gymId:
+            activeGymId,
+
           processed:
             syncManagerState.processed,
 
@@ -871,12 +1010,18 @@ export const synchronizePendingItems =
 
       };
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
         '❌ Error general del syncManager:',
         error
       );
+
+
+      syncing =
+        false;
 
 
       syncManagerState = {
@@ -885,6 +1030,8 @@ export const synchronizePendingItems =
 
         syncing:
           false,
+
+        activeGymId,
 
         lastSyncError:
           error instanceof Error
@@ -898,10 +1045,6 @@ export const synchronizePendingItems =
             .toISOString()
 
       };
-
-
-      syncing =
-        false;
 
 
       await dispatchSyncManagerUpdate();
@@ -922,7 +1065,12 @@ export const synchronizePendingItems =
 
 
 // ======================================================
-// REINTENTAR OPERACIONES FALLIDAS
+// FALLIDOS
+// ======================================================
+//
+// Por seguridad seguimos sin convertir failed -> pending
+// automáticamente. Así evitamos ciclos infinitos.
+//
 // ======================================================
 
 export const synchronizeFailedItems =
@@ -948,37 +1096,33 @@ export const synchronizeFailedItems =
     }
 
 
-    const failed =
-      await getFailedSyncItems(
-        gymId
-      );
+    const activeGymId =
+      gymId ||
+      getCurrentGymId();
 
 
     if (
-      failed.length ===
-      0
+      !activeGymId
     ) {
 
       return {
 
         success:
-          true,
+          false,
 
-        processed:
-          0
+        reason:
+          'no_active_gym'
 
       };
 
     }
 
 
-    /*
-     * Las funciones de syncQueue permiten resetear failed,
-     * pero aquí no las ejecutamos automáticamente todavía.
-     *
-     * Cuando conectemos Supabase añadiremos el reintento
-     * controlado.
-     */
+    const failed =
+      await getFailedSyncItems(
+        activeGymId
+      );
+
 
     return {
 
@@ -992,6 +1136,73 @@ export const synchronizeFailedItems =
         failed
 
     };
+
+  };
+
+
+// ======================================================
+// PROGRAMAR SINCRONIZACIÓN DE COLA
+// ======================================================
+//
+// syncQueue ya emite NEXGYM_SYNC_QUEUE_UPDATE.
+// Escuchamos ese evento para que una operación nueva se
+// intente subir sin tener que recargar la página.
+//
+// Debounce corto:
+// múltiples operaciones creadas juntas (miembro + pago +
+// suscripción) se procesan en un solo ciclo.
+//
+// ======================================================
+
+const scheduleQueueSynchronization =
+  () => {
+
+    if (
+      queueSyncTimer
+    ) {
+
+      window.clearTimeout(
+        queueSyncTimer
+      );
+
+    }
+
+
+    queueSyncTimer =
+      window.setTimeout(
+        async () => {
+
+          queueSyncTimer =
+            null;
+
+
+          if (
+            !isOnline()
+          ) {
+
+            return;
+
+          }
+
+
+          const gymId =
+            getCurrentGymId();
+
+
+          if (!gymId) {
+
+            return;
+
+          }
+
+
+          await synchronizePendingItems({
+            gymId
+          });
+
+        },
+        350
+      );
 
   };
 
@@ -1020,20 +1231,33 @@ const handleNetworkStatusChange =
     }
 
 
+    const gymId =
+      getCurrentGymId();
+
+
+    if (!gymId) {
+
+      console.log(
+        '🌐 Internet recuperado, pero todavía no hay gimnasio autenticado.'
+      );
+
+
+      return;
+
+    }
+
+
     console.log(
-      '🌐 Internet recuperado. Revisando operaciones pendientes...'
+      '🌐 Internet recuperado. Revisando operaciones pendientes...',
+      {
+        gymId
+      }
     );
 
 
-    /*
-     * Si todavía no hay handlers remotos,
-     * synchronizePendingItems simplemente dejará
-     * los registros pending.
-     *
-     * No se perderá nada.
-     */
-
-    await synchronizePendingItems();
+    await synchronizePendingItems({
+      gymId
+    });
 
   };
 
@@ -1058,10 +1282,6 @@ export const initializeSyncManager =
       true;
 
 
-    // ==================================================
-    // RECUPERAR OPERACIONES INTERRUMPIDAS
-    // ==================================================
-
     try {
 
       const recovered =
@@ -1079,7 +1299,9 @@ export const initializeSyncManager =
 
       }
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
         'Error recuperando operaciones pendientes:',
@@ -1089,14 +1311,24 @@ export const initializeSyncManager =
     }
 
 
-    // ==================================================
-    // ESCUCHAR INTERNET
-    // ==================================================
-
     unsubscribeNetwork =
       subscribeToNetworkStatus(
         handleNetworkStatusChange
       );
+
+
+    queueUpdateHandler =
+      () => {
+
+        scheduleQueueSynchronization();
+
+      };
+
+
+    window.addEventListener(
+      SYNC_QUEUE_UPDATE_EVENT,
+      queueUpdateHandler
+    );
 
 
     syncManagerState = {
@@ -1104,29 +1336,52 @@ export const initializeSyncManager =
       ...syncManagerState,
 
       initialized:
-        true
+        true,
+
+      activeGymId:
+        getCurrentGymId()
 
     };
 
 
     console.log(
-      '🔄 syncManager inicializado.'
+      '🔄 syncManager inicializado.',
+      {
+        gymId:
+          getCurrentGymId(),
+
+        handlers:
+          getRegisteredSyncEntities()
+      }
     );
 
 
     await dispatchSyncManagerUpdate();
 
 
-    /*
-     * Si abrimos el sistema con internet, revisamos
-     * inmediatamente la cola.
-     */
-
     if (
       isOnline()
     ) {
 
-      await synchronizePendingItems();
+      const gymId =
+        getCurrentGymId();
+
+
+      if (
+        gymId
+      ) {
+
+        await synchronizePendingItems({
+          gymId
+        });
+
+      } else {
+
+        console.log(
+          '🔐 syncManager listo; sincronización pendiente hasta iniciar sesión.'
+        );
+
+      }
 
     }
 
@@ -1157,9 +1412,38 @@ export const destroySyncManager =
       null;
 
 
+    if (
+      queueUpdateHandler
+    ) {
+
+      window.removeEventListener(
+        SYNC_QUEUE_UPDATE_EVENT,
+        queueUpdateHandler
+      );
+
+    }
+
+
+    queueUpdateHandler =
+      null;
+
+
+    if (
+      queueSyncTimer
+    ) {
+
+      window.clearTimeout(
+        queueSyncTimer
+      );
+
+      queueSyncTimer =
+        null;
+
+    }
+
+
     initialized =
       false;
-
 
     syncing =
       false;
@@ -1173,7 +1457,10 @@ export const destroySyncManager =
         false,
 
       syncing:
-        false
+        false,
+
+      activeGymId:
+        null
 
     };
 

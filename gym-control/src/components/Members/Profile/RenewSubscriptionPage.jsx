@@ -43,6 +43,10 @@ import {
   saveMember
 } from '../../../utils/memberId';
 
+import {
+  calculateSubscriptionEndDate
+} from '../../../utils/subscriptionDateUtils.js';
+
 
 // ======================================================
 // CONSTANTES
@@ -662,17 +666,10 @@ const RenewSubscriptionPage = () => {
         plans[2];
 
       const endDate =
-        new Date(
-          startDate
+        calculateSubscriptionEndDate(
+          startDate,
+          selectedPlan
         );
-
-      // Ejemplo:
-      // inicio 14 ago + 30 días => 13 sept
-      endDate.setDate(
-        endDate.getDate() +
-        selectedPlan.days -
-        1
-      );
 
       setFormData(
         previous => ({
@@ -814,69 +811,11 @@ const RenewSubscriptionPage = () => {
         getRenewalStartDate();
 
       const endDate =
-        new Date(
-          startDate
+        calculateSubscriptionEndDate(
+          startDate,
+          selectedPlanData
         );
 
-
-      const planId =
-        String(
-          selectedPlanData.id ||
-          ''
-        ).toLowerCase();
-
-
-      if (
-        planId ===
-        'mensual'
-      ) {
-
-        const originalDay =
-          endDate.getDate();
-
-        endDate.setDate(1);
-
-        endDate.setMonth(
-          endDate.getMonth() +
-          1
-        );
-
-        const lastDay =
-          new Date(
-            endDate.getFullYear(),
-            endDate.getMonth() +
-              1,
-            0
-          ).getDate();
-
-        endDate.setDate(
-          Math.min(
-            originalDay,
-            lastDay
-          )
-        );
-
-      } else if (
-        planId ===
-        'anual'
-      ) {
-
-        endDate.setFullYear(
-          endDate.getFullYear() +
-          1
-        );
-
-      } else {
-
-        endDate.setDate(
-          endDate.getDate() +
-          Number(
-            selectedPlanData.days ||
-            0
-          )
-        );
-
-      }
 
       setFormData(
         previous => ({

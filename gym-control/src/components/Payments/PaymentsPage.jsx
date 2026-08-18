@@ -78,6 +78,11 @@ import {
 } from '../../offline/services/offlineBillingService.js';
 
 
+import {
+  readGymScopedArray,
+  saveGymScopedArray
+} from '../../utils/gymScopedStorage.js';
+
 // ======================================================
 // STORAGE
 // ======================================================
@@ -153,38 +158,9 @@ const readLocalArray = (
   key
 ) => {
 
-  try {
-
-    const raw =
-      localStorage.getItem(
-        key
-      );
-
-    if (!raw) {
-      return [];
-    }
-
-    const parsed =
-      JSON.parse(
-        raw
-      );
-
-    return Array.isArray(
-      parsed
-    )
-      ? parsed
-      : [];
-
-  } catch (error) {
-
-    console.error(
-      `Error leyendo ${key}:`,
-      error
-    );
-
-    return [];
-
-  }
+  return readGymScopedArray(
+    key
+  );
 
 };
 
@@ -198,17 +174,9 @@ const saveLocalArray = (
   data
 ) => {
 
-  localStorage.setItem(
+  return saveGymScopedArray(
     key,
-    JSON.stringify(
-      data
-    )
-  );
-
-  window.dispatchEvent(
-    new Event(
-      'gym-storage-update'
-    )
+    data
   );
 
 };

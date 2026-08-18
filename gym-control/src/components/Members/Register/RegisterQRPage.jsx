@@ -62,25 +62,34 @@ import {
 } from '../../../offline/services/offlineBillingService.js';
 
 
+import {
+  readGymScopedArray,
+  saveGymScopedArray
+} from '../../../utils/gymScopedStorage.js';
+
 const PAYMENTS_KEY = 'gym_control_payments';
 const SUBSCRIPTION_HISTORY_KEY = 'gym_control_subscription_history';
 
-const readLocalArray = (key) => {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return [];
+const readLocalArray = (
+  key
+) => {
 
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    console.error(`Error leyendo ${key}:`, error);
-    return [];
-  }
+  return readGymScopedArray(
+    key
+  );
+
 };
 
-const saveLocalArray = (key, data) => {
-  localStorage.setItem(key, JSON.stringify(data));
-  window.dispatchEvent(new Event('gym-storage-update'));
+const saveLocalArray = (
+  key,
+  data
+) => {
+
+  return saveGymScopedArray(
+    key,
+    data
+  );
+
 };
 
 const createLocalId = (prefix) => {

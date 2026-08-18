@@ -56,6 +56,11 @@ import {
 } from '../../utils/visitsStorage';
 
 
+import {
+  readGymScopedArray,
+  filterRecordsForCurrentGym
+} from '../../utils/gymScopedStorage.js';
+
 // ======================================================
 // STORAGE
 // ======================================================
@@ -126,38 +131,9 @@ const readLocalArray = (
   key
 ) => {
 
-  try {
-
-    const raw =
-      localStorage.getItem(
-        key
-      );
-
-    if (!raw) {
-      return [];
-    }
-
-    const parsed =
-      JSON.parse(
-        raw
-      );
-
-    return Array.isArray(
-      parsed
-    )
-      ? parsed
-      : [];
-
-  } catch (error) {
-
-    console.error(
-      `Error leyendo ${key}:`,
-      error
-    );
-
-    return [];
-
-  }
+  return readGymScopedArray(
+    key
+  );
 
 };
 
@@ -713,16 +689,22 @@ const ReportsPage = () => {
       );
 
       setSales(
-        getSales()
+        filterRecordsForCurrentGym(
+          getSales()
+        )
       );
 
       setRegisteredVisits(
-        getStoredVisits()
+        filterRecordsForCurrentGym(
+          getStoredVisits()
+        )
       );
 
 
       setVisitAttendance(
-        getVisitAttendance()
+        filterRecordsForCurrentGym(
+          getVisitAttendance()
+        )
       );
 
       setCashShifts(

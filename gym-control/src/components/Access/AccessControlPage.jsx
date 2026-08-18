@@ -69,6 +69,11 @@ import {
 } from '../../offline/repositories/attendanceRepository.js';
 
 
+import {
+  readGymScopedArray,
+  saveGymScopedArray
+} from '../../utils/gymScopedStorage.js';
+
 // ======================================================
 // STORAGE
 // ======================================================
@@ -232,42 +237,9 @@ const readLocalArray = (
   key
 ) => {
 
-  try {
-
-    const raw =
-      localStorage.getItem(
-        key
-      );
-
-
-    if (!raw) {
-      return [];
-    }
-
-
-    const parsed =
-      JSON.parse(
-        raw
-      );
-
-
-    return Array.isArray(
-      parsed
-    )
-      ? parsed
-      : [];
-
-  } catch (error) {
-
-    console.error(
-      `Error leyendo ${key}:`,
-      error
-    );
-
-
-    return [];
-
-  }
+  return readGymScopedArray(
+    key
+  );
 
 };
 
@@ -281,20 +253,9 @@ const saveLocalArray = (
   data
 ) => {
 
-  localStorage.setItem(
+  return saveGymScopedArray(
     key,
-    JSON.stringify(
-      data
-    )
-  );
-
-
-  // Las demás pantallas pueden escuchar
-  // este evento para actualizarse.
-  window.dispatchEvent(
-    new Event(
-      'gym-storage-update'
-    )
+    data
   );
 
 };
