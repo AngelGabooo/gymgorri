@@ -1,6 +1,7 @@
 // src/nexgym/pages/NexgymGymsPage.jsx
 
 import React, {
+  useCallback,
   useEffect,
   useMemo,
   useState
@@ -20,12 +21,14 @@ import {
   Wifi,
   ChevronRight,
   CircleDollarSign,
-  AlertTriangle
+  RefreshCcw,
+  AlertCircle,
+  LoaderCircle
 } from 'lucide-react';
 
 import {
-  getNexgymGymsWithStats
-} from '../services/nexgymGymService';
+  getNexgymCloudGyms
+} from '../services/nexgymCloudGymService.js';
 
 
 // ======================================================
@@ -56,19 +59,108 @@ const NexgymGymsPage = () => {
   ] = useState('all');
 
 
+  const [
+    loading,
+    setLoading
+  ] = useState(true);
+
+
+  const [
+    loadError,
+    setLoadError
+  ] = useState('');
+
+
   // ======================================================
   // CARGAR
   // ======================================================
 
   const loadGyms =
-    () => {
+    useCallback(
+      async () => {
 
-      setGyms(
-        getNexgymGymsWithStats()
-      );
+        try {
 
-    };
+          setLoading(true);
 
+          setLoadError('');
+
+
+          const result =
+            await getNexgymCloudGyms();
+
+
+          if (
+            !result.success
+          ) {
+
+            console.error(
+              '❌ No se pudieron cargar los gimnasios:',
+              result
+            );
+
+
+            setGyms([]);
+
+
+            setLoadError(
+              result.message ||
+              'No se pudieron cargar los gimnasios.'
+            );
+
+
+            return;
+
+          }
+
+
+          setGyms(
+            Array.isArray(
+              result.gyms
+            )
+              ? result.gyms
+              : []
+          );
+
+
+          console.log(
+            '✅ Panel NEXGYM actualizado desde Supabase:',
+            {
+              total:
+                result.gyms?.length ||
+                0
+            }
+          );
+
+        } catch (error) {
+
+          console.error(
+            '❌ Error cargando gimnasios:',
+            error
+          );
+
+
+          setGyms([]);
+
+
+          setLoadError(
+            'No se pudieron cargar los gimnasios.'
+          );
+
+        } finally {
+
+          setLoading(false);
+
+        }
+
+      },
+      []
+    );
+
+
+  // ======================================================
+  // INIT
+  // ======================================================
 
   useEffect(
     () => {
@@ -76,15 +168,17 @@ const NexgymGymsPage = () => {
       loadGyms();
 
 
+      const refresh =
+        () => {
+
+          void loadGyms();
+
+        };
+
+
       window.addEventListener(
         'nexgym-gyms-update',
-        loadGyms
-      );
-
-
-      window.addEventListener(
-        'gym-storage-update',
-        loadGyms
+        refresh
       );
 
 
@@ -92,49 +186,55 @@ const NexgymGymsPage = () => {
 
         window.removeEventListener(
           'nexgym-gyms-update',
-          loadGyms
-        );
-
-
-        window.removeEventListener(
-          'gym-storage-update',
-          loadGyms
+          refresh
         );
 
       };
 
     },
-    []
+    [
+      loadGyms
+    ]
   );
 
 
   // ======================================================
-  // ESTADO REAL
+  // ESTADO
   // ======================================================
 
-  const getGymStatus =
-    (
-      gym
-    ) => {
+  const getGymStatus = (
+    gym
+  ) => {
 
-      if (
-        gym?.access
-          ?.accountStatus ===
-        'inactive'
-      ) {
+    if (
+      gym?.access
+        ?.accountStatus ===
+      'inactive'
+    ) {
 
-        return 'inactive';
+      return 'inactive';
 
-      }
+    }
 
 
-      return (
-        gym?.subscription
-          ?.status ||
-        'active'
-      );
+    if (
+      gym?.access
+        ?.accountStatus ===
+      'suspended'
+    ) {
 
-    };
+      return 'suspended';
+
+    }
+
+
+    return (
+      gym?.subscription
+        ?.status ||
+      'active'
+    );
+
+  };
 
 
   // ======================================================
@@ -170,21 +270,31 @@ const NexgymGymsPage = () => {
 
             const matchesSearch =
               !query ||
+
               gym.name
                 ?.toLowerCase()
                 .includes(
                   query
                 ) ||
+
               gym.gymCode
                 ?.toLowerCase()
                 .includes(
                   query
                 ) ||
+
               gym.owner?.name
                 ?.toLowerCase()
                 .includes(
                   query
                 ) ||
+
+              gym.owner?.email
+                ?.toLowerCase()
+                .includes(
+                  query
+                ) ||
+
               gym.access?.email
                 ?.toLowerCase()
                 .includes(
@@ -217,64 +327,47 @@ const NexgymGymsPage = () => {
     useMemo(
       () => {
 
-        const active =
-          gyms.filter(
-            gym =>
-              getGymStatus(
-                gym
-              ) ===
-              'active'
-          ).length;
-
-
-        const trial =
-          gyms.filter(
-            gym =>
-              getGymStatus(
-                gym
-              ) ===
-              'trial'
-          ).length;
-
-
-        const pending =
-          gyms.filter(
-            gym =>
-              getGymStatus(
-                gym
-              ) ===
-              'past_due'
-          ).length;
-
-
-        const suspended =
-          gyms.filter(
-            gym =>
-              getGymStatus(
-                gym
-              ) ===
-              'suspended'
-          ).length;
-
-
-        const inactive =
-          gyms.filter(
-            gym =>
-              getGymStatus(
-                gym
-              ) ===
-              'inactive'
-          ).length;
+        const count =
+          status =>
+            gyms.filter(
+              gym =>
+                getGymStatus(
+                  gym
+                ) ===
+                status
+            ).length;
 
 
         return {
+
           total:
             gyms.length,
-          active,
-          trial,
-          pending,
-          suspended,
-          inactive
+
+          active:
+            count(
+              'active'
+            ),
+
+          trial:
+            count(
+              'trial'
+            ),
+
+          pending:
+            count(
+              'past_due'
+            ),
+
+          suspended:
+            count(
+              'suspended'
+            ),
+
+          inactive:
+            count(
+              'inactive'
+            )
+
         };
 
       },
@@ -288,25 +381,28 @@ const NexgymGymsPage = () => {
   // FECHA
   // ======================================================
 
-  const formatDate =
-    (
-      date
-    ) => {
+  const formatDate = (
+    date
+  ) => {
 
-      if (!date) {
+    if (!date) {
 
-        return 'Sin fecha';
+      return 'Sin fecha';
 
-      }
+    }
 
+
+    try {
 
       return new Intl.DateTimeFormat(
         'es-MX',
         {
           day:
             '2-digit',
+
           month:
             'short',
+
           year:
             'numeric'
         }
@@ -316,30 +412,44 @@ const NexgymGymsPage = () => {
         )
       );
 
-    };
+    } catch {
+
+      return 'Sin fecha';
+
+    }
+
+  };
 
 
-  const formatDateTime =
-    (
-      value
-    ) => {
+  // ======================================================
+  // FECHA / HORA
+  // ======================================================
 
-      if (!value) {
+  const formatDateTime = (
+    value
+  ) => {
 
-        return 'Nunca';
+    if (!value) {
 
-      }
+      return 'Nunca';
 
+    }
+
+
+    try {
 
       return new Intl.DateTimeFormat(
         'es-MX',
         {
           day:
             '2-digit',
+
           month:
             'short',
+
           hour:
             '2-digit',
+
           minute:
             '2-digit'
         }
@@ -349,13 +459,22 @@ const NexgymGymsPage = () => {
         )
       );
 
-    };
+    } catch {
 
+      return 'Nunca';
+
+    }
+
+  };
+
+
+  // ======================================================
+  // RENDER
+  // ======================================================
 
   return (
 
     <div className="p-8">
-
 
       {/* ================================================== */}
       {/* HEADER */}
@@ -376,37 +495,84 @@ const NexgymGymsPage = () => {
         </div>
 
 
-        <button
-          type="button"
-          onClick={() =>
-            navigate(
-              '/nexgym/gyms/new'
-            )
-          }
-          className="
-            h-11
-            px-5
-            rounded-xl
-            bg-[#00ff88]
-            text-black
-            font-semibold
-            text-sm
-            flex
-            items-center
-            justify-center
-            gap-2
-            hover:bg-[#00e67a]
-            transition-all
-          "
-        >
+        <div className="flex items-center gap-3">
 
-          <Plus
-            className="w-4 h-4"
-          />
+          <button
+            type="button"
+            onClick={
+              loadGyms
+            }
+            disabled={
+              loading
+            }
+            className="
+              h-11
+              px-4
+              rounded-xl
+              bg-[#171717]
+              border
+              border-[#292929]
+              text-gray-300
+              flex
+              items-center
+              gap-2
+              text-sm
+              hover:text-white
+              hover:border-[#3a3a3a]
+              disabled:opacity-50
+            "
+          >
 
-          Nuevo gimnasio
+            <RefreshCcw
+              className={`
+                w-4
+                h-4
+                ${
+                  loading
+                    ? 'animate-spin'
+                    : ''
+                }
+              `}
+            />
 
-        </button>
+            Actualizar
+
+          </button>
+
+
+          <button
+            type="button"
+            onClick={() =>
+              navigate(
+                '/nexgym/gyms/new'
+              )
+            }
+            className="
+              h-11
+              px-5
+              rounded-xl
+              bg-[#00ff88]
+              text-black
+              font-semibold
+              text-sm
+              flex
+              items-center
+              justify-center
+              gap-2
+              hover:bg-[#00e67a]
+              transition-all
+            "
+          >
+
+            <Plus
+              className="w-4 h-4"
+            />
+
+            Nuevo gimnasio
+
+          </button>
+
+        </div>
 
       </div>
 
@@ -460,6 +626,37 @@ const NexgymGymsPage = () => {
         />
 
       </div>
+
+
+      {/* ================================================== */}
+      {/* ERROR */}
+      {/* ================================================== */}
+
+      {
+        loadError && (
+
+          <div className="mb-5 bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-start gap-3">
+
+            <AlertCircle
+              className="w-5 h-5 text-red-400 shrink-0 mt-0.5"
+            />
+
+            <div>
+
+              <p className="text-red-400 text-sm font-medium">
+                No se pudieron cargar los gimnasios
+              </p>
+
+              <p className="text-red-400/70 text-xs mt-1">
+                {loadError}
+              </p>
+
+            </div>
+
+          </div>
+
+        )
+      }
 
 
       {/* ================================================== */}
@@ -578,303 +775,324 @@ const NexgymGymsPage = () => {
       <div className="bg-[#111111] border border-[#202020] rounded-2xl overflow-hidden">
 
         {
-          filteredGyms.length ===
-          0
+          loading
             ? (
 
-              <div className="py-20 text-center">
+              <div className="py-20 flex flex-col items-center justify-center">
 
-                <Building2
-                  className="w-12 h-12 text-gray-800 mx-auto"
+                <LoaderCircle
+                  className="w-10 h-10 text-[#00ff88] animate-spin"
                 />
 
-                <p className="text-white font-medium mt-4">
-                  No hay gimnasios
-                </p>
-
-                <p className="text-gray-600 text-sm mt-1">
-                  Crea tu primer cliente desde Nuevo gimnasio.
+                <p className="text-gray-500 text-sm mt-4">
+                  Cargando gimnasios...
                 </p>
 
               </div>
 
             )
-            : (
+            : filteredGyms.length ===
+              0
+              ? (
 
-              <div className="overflow-x-auto">
+                <div className="py-20 text-center">
 
-                <table className="w-full">
+                  <Building2
+                    className="w-12 h-12 text-gray-800 mx-auto"
+                  />
 
-                  <thead>
+                  <p className="text-white font-medium mt-4">
+                    No hay gimnasios
+                  </p>
 
-                    <tr className="border-b border-[#202020]">
+                  <p className="text-gray-600 text-sm mt-1">
+                    Crea tu primer cliente desde Nuevo gimnasio.
+                  </p>
 
-                      <TableHeader>
-                        Gimnasio
-                      </TableHeader>
+                </div>
 
-                      <TableHeader>
-                        Propietario
-                      </TableHeader>
+              )
+              : (
 
-                      <TableHeader>
-                        Usuarios
-                      </TableHeader>
+                <div className="overflow-x-auto">
 
-                      <TableHeader>
-                        Miembros
-                      </TableHeader>
+                  <table className="w-full">
 
-                      <TableHeader>
-                        Próximo pago
-                      </TableHeader>
+                    <thead>
 
-                      <TableHeader>
-                        Estado
-                      </TableHeader>
+                      <tr className="border-b border-[#202020]">
 
-                      <TableHeader>
-                        Última conexión
-                      </TableHeader>
+                        <TableHeader>
+                          Gimnasio
+                        </TableHeader>
 
-                      <TableHeader>
-                        Acción
-                      </TableHeader>
+                        <TableHeader>
+                          Propietario
+                        </TableHeader>
 
-                    </tr>
+                        <TableHeader>
+                          Usuarios
+                        </TableHeader>
 
-                  </thead>
+                        <TableHeader>
+                          Miembros
+                        </TableHeader>
 
+                        <TableHeader>
+                          Próximo pago
+                        </TableHeader>
 
-                  <tbody>
+                        <TableHeader>
+                          Estado
+                        </TableHeader>
 
-                    {
-                      filteredGyms.map(
-                        gym => {
+                        <TableHeader>
+                          Última conexión
+                        </TableHeader>
 
-                          const status =
-                            getGymStatus(
-                              gym
-                            );
+                        <TableHeader>
+                          Acción
+                        </TableHeader>
 
+                      </tr>
 
-                          const statusData =
-                            getStatusData(
-                              status
-                            );
+                    </thead>
 
 
-                          return (
+                    <tbody>
 
-                            <tr
-                              key={
-                                gym.id
-                              }
-                              className="
-                                border-b
-                                border-[#1b1b1b]
-                                last:border-b-0
-                                hover:bg-[#141414]
-                                transition-all
-                              "
-                            >
+                      {
+                        filteredGyms.map(
+                          gym => {
 
-                              <td className="px-5 py-4">
+                            const status =
+                              getGymStatus(
+                                gym
+                              );
 
-                                <div className="flex items-center gap-3">
 
-                                  <div className="w-10 h-10 rounded-xl bg-[#00ff88]/10 border border-[#00ff88]/10 flex items-center justify-center">
+                            const statusData =
+                              getStatusData(
+                                status
+                              );
 
-                                    <Building2
-                                      className="w-5 h-5 text-[#00ff88]"
+
+                            return (
+
+                              <tr
+                                key={
+                                  gym.id
+                                }
+                                className="
+                                  border-b
+                                  border-[#1b1b1b]
+                                  last:border-b-0
+                                  hover:bg-[#141414]
+                                  transition-all
+                                "
+                              >
+
+                                <td className="px-5 py-4">
+
+                                  <div className="flex items-center gap-3">
+
+                                    <div className="w-10 h-10 rounded-xl bg-[#00ff88]/10 border border-[#00ff88]/10 flex items-center justify-center">
+
+                                      <Building2
+                                        className="w-5 h-5 text-[#00ff88]"
+                                      />
+
+                                    </div>
+
+
+                                    <div>
+
+                                      <p className="text-white text-sm font-medium">
+                                        {gym.name}
+                                      </p>
+
+                                      <p className="text-gray-600 text-xs mt-1">
+                                        {gym.gymCode || 'Sin código'}
+                                      </p>
+
+                                    </div>
+
+                                  </div>
+
+                                </td>
+
+
+                                <td className="px-5 py-4">
+
+                                  <p className="text-gray-300 text-sm">
+                                    {gym.owner?.name || 'Sin propietario'}
+                                  </p>
+
+                                  <p className="text-gray-600 text-xs mt-1">
+                                    {gym.access?.email || gym.owner?.email || 'Sin correo'}
+                                  </p>
+
+                                </td>
+
+
+                                <td className="px-5 py-4">
+
+                                  <div className="flex items-center gap-2 text-gray-300 text-sm">
+
+                                    <UserCog
+                                      className="w-4 h-4 text-gray-600"
                                     />
 
-                                  </div>
-
-
-                                  <div>
-
-                                    <p className="text-white text-sm font-medium">
-                                      {gym.name}
-                                    </p>
-
-                                    <p className="text-gray-600 text-xs mt-1">
-                                      {gym.gymCode}
-                                    </p>
+                                    {gym.usersCount || 0}
 
                                   </div>
 
-                                </div>
-
-                              </td>
+                                </td>
 
 
-                              <td className="px-5 py-4">
+                                <td className="px-5 py-4">
 
-                                <p className="text-gray-300 text-sm">
-                                  {gym.owner?.name || 'Sin propietario'}
-                                </p>
+                                  <div className="flex items-center gap-2 text-gray-300 text-sm">
 
-                                <p className="text-gray-600 text-xs mt-1">
-                                  {gym.access?.email || 'Sin correo'}
-                                </p>
+                                    <Users
+                                      className="w-4 h-4 text-gray-600"
+                                    />
 
-                              </td>
+                                    {gym.membersCount || 0}
 
+                                  </div>
 
-                              <td className="px-5 py-4">
-
-                                <div className="flex items-center gap-2 text-gray-300 text-sm">
-
-                                  <UserCog
-                                    className="w-4 h-4 text-gray-600"
-                                  />
-
-                                  {gym.usersCount || 0}
-
-                                </div>
-
-                              </td>
+                                </td>
 
 
-                              <td className="px-5 py-4">
+                                <td className="px-5 py-4">
 
-                                <div className="flex items-center gap-2 text-gray-300 text-sm">
+                                  <div className="flex items-center gap-2">
 
-                                  <Users
-                                    className="w-4 h-4 text-gray-600"
-                                  />
+                                    <CalendarDays
+                                      className="w-4 h-4 text-gray-600"
+                                    />
 
-                                  {gym.membersCount || 0}
+                                    <span className="text-gray-300 text-sm whitespace-nowrap">
 
-                                </div>
+                                      {
+                                        formatDate(
+                                          gym.subscription
+                                            ?.nextPaymentDate
+                                        )
+                                      }
 
-                              </td>
+                                    </span>
+
+                                  </div>
+
+                                </td>
 
 
-                              <td className="px-5 py-4">
+                                <td className="px-5 py-4">
 
-                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`
+                                      inline-flex
+                                      items-center
+                                      border
+                                      rounded-full
+                                      px-2.5
+                                      py-1
+                                      text-xs
+                                      font-medium
+                                      ${statusData.className}
+                                    `}
+                                  >
 
-                                  <CalendarDays
-                                    className="w-4 h-4 text-gray-600"
-                                  />
+                                    {statusData.label}
 
-                                  <span className="text-gray-300 text-sm whitespace-nowrap">
-                                    {
-                                      formatDate(
-                                        gym.subscription
-                                          ?.nextPaymentDate
-                                      )
-                                    }
                                   </span>
 
-                                </div>
-
-                              </td>
+                                </td>
 
 
-                              <td className="px-5 py-4">
+                                <td className="px-5 py-4">
 
-                                <span
-                                  className={`
-                                    inline-flex
-                                    items-center
-                                    border
-                                    rounded-full
-                                    px-2.5
-                                    py-1
-                                    text-xs
-                                    font-medium
+                                  <div className="flex items-center gap-2">
 
-                                    ${statusData.className}
-                                  `}
-                                >
-                                  {statusData.label}
-                                </span>
+                                    <Wifi
+                                      className="w-4 h-4 text-gray-600"
+                                    />
 
-                              </td>
+                                    <span className="text-gray-400 text-xs whitespace-nowrap">
+
+                                      {
+                                        formatDateTime(
+                                          gym.lastConnectionAt
+                                        )
+                                      }
+
+                                    </span>
+
+                                  </div>
+
+                                </td>
 
 
-                              <td className="px-5 py-4">
+                                <td className="px-5 py-4">
 
-                                <div className="flex items-center gap-2">
-
-                                  <Wifi
-                                    className="w-4 h-4 text-gray-600"
-                                  />
-
-                                  <span className="text-gray-400 text-xs whitespace-nowrap">
-                                    {
-                                      formatDateTime(
-                                        gym.lastConnectionAt
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      navigate(
+                                        `/nexgym/gyms/${gym.id}`
                                       )
                                     }
-                                  </span>
+                                    className="
+                                      h-9
+                                      px-3
+                                      rounded-lg
+                                      bg-[#171717]
+                                      border
+                                      border-[#272727]
+                                      text-gray-300
+                                      text-xs
+                                      flex
+                                      items-center
+                                      gap-2
+                                      hover:text-white
+                                      hover:border-[#3a3a3a]
+                                    "
+                                  >
 
-                                </div>
+                                    Administrar
 
-                              </td>
+                                    <ChevronRight
+                                      className="w-4 h-4"
+                                    />
 
+                                  </button>
 
-                              <td className="px-5 py-4">
+                                </td>
 
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    navigate(
-                                      `/nexgym/gyms/${gym.id}`
-                                    )
-                                  }
-                                  className="
-                                    h-9
-                                    px-3
-                                    rounded-lg
-                                    bg-[#171717]
-                                    border
-                                    border-[#272727]
-                                    text-gray-300
-                                    text-xs
-                                    flex
-                                    items-center
-                                    gap-2
-                                    hover:text-white
-                                    hover:border-[#3a3a3a]
-                                  "
-                                >
+                              </tr>
 
-                                  Administrar
+                            );
 
-                                  <ChevronRight
-                                    className="w-4 h-4"
-                                  />
+                          }
+                        )
+                      }
 
-                                </button>
+                    </tbody>
 
-                              </td>
+                  </table>
 
-                            </tr>
+                </div>
 
-                          );
-
-                        }
-                      )
-                    }
-
-                  </tbody>
-
-                </table>
-
-              </div>
-
-            )
+              )
         }
 
       </div>
 
 
       {/* ================================================== */}
-      {/* INFORMACIÓN */}
+      {/* INFO */}
       {/* ================================================== */}
 
       <div className="mt-5 flex items-start gap-3 bg-[#111111] border border-[#202020] rounded-2xl p-4">
@@ -890,7 +1108,7 @@ const NexgymGymsPage = () => {
           </p>
 
           <p className="text-gray-500 text-xs mt-1">
-            Desde el botón Administrar puedes registrar pagos, restablecer contraseñas, suspender, reactivar o desactivar un gimnasio.
+            Desde el botón Administrar puedes consultar y administrar cada gimnasio.
           </p>
 
         </div>
@@ -917,6 +1135,7 @@ const getStatusData = (
     active: {
       label:
         'Activo',
+
       className:
         'bg-[#00ff88]/10 text-[#00ff88] border-[#00ff88]/20'
     },
@@ -924,6 +1143,7 @@ const getStatusData = (
     trial: {
       label:
         'Prueba',
+
       className:
         'bg-blue-500/10 text-blue-400 border-blue-500/20'
     },
@@ -931,6 +1151,7 @@ const getStatusData = (
     past_due: {
       label:
         'Pago pendiente',
+
       className:
         'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
     },
@@ -938,6 +1159,7 @@ const getStatusData = (
     suspended: {
       label:
         'Suspendido',
+
       className:
         'bg-orange-500/10 text-orange-400 border-orange-500/20'
     },
@@ -945,8 +1167,25 @@ const getStatusData = (
     inactive: {
       label:
         'Desactivado',
+
       className:
         'bg-red-500/10 text-red-400 border-red-500/20'
+    },
+
+    expired: {
+      label:
+        'Vencido',
+
+      className:
+        'bg-red-500/10 text-red-400 border-red-500/20'
+    },
+
+    cancelled: {
+      label:
+        'Cancelado',
+
+      className:
+        'bg-gray-500/10 text-gray-400 border-gray-500/20'
     }
 
   };

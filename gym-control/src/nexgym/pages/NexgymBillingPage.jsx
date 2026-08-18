@@ -22,8 +22,8 @@ import {
 } from 'lucide-react';
 
 import {
-  getAllNexgymPayments
-} from '../services/nexgymGymService';
+  getNexgymCloudPayments
+} from '../services/nexgymCloudGymService.js';
 
 
 const NexgymBillingPage = () => {
@@ -45,11 +45,50 @@ const NexgymBillingPage = () => {
 
 
   const loadPayments =
-    () => {
+    async () => {
 
-      setPayments(
-        getAllNexgymPayments()
-      );
+      try {
+
+        const result =
+          await getNexgymCloudPayments();
+
+
+        if (
+          !result.success
+        ) {
+
+          console.error(
+            '❌ No se pudieron cargar los pagos NEXGYM:',
+            result
+          );
+
+
+          setPayments([]);
+
+          return;
+
+        }
+
+
+        setPayments(
+          Array.isArray(
+            result.payments
+          )
+            ? result.payments
+            : []
+        );
+
+      } catch (error) {
+
+        console.error(
+          '❌ Error cargando pagos NEXGYM:',
+          error
+        );
+
+
+        setPayments([]);
+
+      }
 
     };
 
@@ -57,18 +96,26 @@ const NexgymBillingPage = () => {
   useEffect(
     () => {
 
-      loadPayments();
+      void loadPayments();
+
+
+      const refresh =
+        () => {
+
+          void loadPayments();
+
+        };
 
 
       window.addEventListener(
         'nexgym-gyms-update',
-        loadPayments
+        refresh
       );
 
 
       window.addEventListener(
-        'gym-storage-update',
-        loadPayments
+        'nexgym-activity-update',
+        refresh
       );
 
 
@@ -76,13 +123,13 @@ const NexgymBillingPage = () => {
 
         window.removeEventListener(
           'nexgym-gyms-update',
-          loadPayments
+          refresh
         );
 
 
         window.removeEventListener(
-          'gym-storage-update',
-          loadPayments
+          'nexgym-activity-update',
+          refresh
         );
 
       };

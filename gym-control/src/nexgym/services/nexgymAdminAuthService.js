@@ -1,16 +1,29 @@
 // src/nexgym/services/nexgymAdminAuthService.js
 
 import {
-  hashValue
-} from '../../utils/memberId';
+  supabase
+} from '../../lib/supabaseClient.js';
 
 
 // ======================================================
 // STORAGE
 // ======================================================
-
-const NEXGYM_ADMIN_USERS_KEY =
-  'nexgym_admin_users';
+//
+// IMPORTANTE:
+//
+// La contraseña ya NO se guarda aquí.
+//
+// Supabase Auth administra:
+// - correo
+// - contraseña
+// - sesión
+// - token
+//
+// Este almacenamiento es solamente un cache ligero
+// para que React Router pueda consultar la sesión
+// de forma síncrona.
+//
+// ======================================================
 
 const NEXGYM_ADMIN_SESSION_KEY =
   'nexgym_admin_session';
@@ -18,36 +31,8 @@ const NEXGYM_ADMIN_SESSION_KEY =
 const NEXGYM_ADMIN_AUTH_KEY =
   'nexgym_admin_authenticated';
 
-
-// ======================================================
-// CREDENCIALES INICIALES
-// ======================================================
-//
-// Para desarrollo.
-//
-// Si después agregas:
-//
-// VITE_NEXGYM_ADMIN_EMAIL
-// VITE_NEXGYM_ADMIN_PASSWORD
-//
-// en tu .env, se usarán esos valores.
-//
-// ======================================================
-
-const DEFAULT_ADMIN_EMAIL =
-  import.meta.env
-    .VITE_NEXGYM_ADMIN_EMAIL ||
-  'admin@nexgym.local';
-
-
-const DEFAULT_ADMIN_PASSWORD =
-  import.meta.env
-    .VITE_NEXGYM_ADMIN_PASSWORD ||
-  'NexGym#2026';
-
-
-const DEFAULT_ADMIN_NAME =
-  'Angel García';
+const NEXGYM_ADMIN_PROFILE_KEY =
+  'nexgym_admin_profile';
 
 
 // ======================================================
@@ -59,7 +44,8 @@ const normalizeEmail = (
 ) => {
 
   return String(
-    value || ''
+    value ||
+    ''
   )
     .trim()
     .toLowerCase();
@@ -68,35 +54,291 @@ const normalizeEmail = (
 
 
 // ======================================================
-// CREAR ID
+// DISPARAR CAMBIO DE AUTH
 // ======================================================
 
-const createAdminId = () => {
+const emitAuthUpdate =
+  () => {
 
-  if (
-    window.crypto?.randomUUID
-  ) {
-
-    return `NEXADMIN-${window.crypto.randomUUID()}`;
-
-  }
-
-
-  return (
-    `NEXADMIN-${Date.now()}-` +
-    Math.random()
-      .toString(36)
-      .substring(
-        2,
-        8
+    window.dispatchEvent(
+      new Event(
+        'nexgym-admin-auth-update'
       )
-  );
+    );
 
-};
+  };
 
 
 // ======================================================
-// OBTENER TODOS LOS ADMINISTRADORES
+// LIMPIAR CACHE
+// ======================================================
+
+const clearAdminCache =
+  () => {
+
+    localStorage.removeItem(
+      NEXGYM_ADMIN_AUTH_KEY
+    );
+
+    localStorage.removeItem(
+      NEXGYM_ADMIN_SESSION_KEY
+    );
+
+    localStorage.removeItem(
+      NEXGYM_ADMIN_PROFILE_KEY
+    );
+
+    emitAuthUpdate();
+
+  };
+
+
+// ======================================================
+// GUARDAR SESIÓN LOCAL
+// ======================================================
+
+const saveAdminSession =
+  (
+    profile,
+    authSession = null
+  ) => {
+
+    if (
+      !profile?.id ||
+      !profile?.user_id
+    ) {
+
+      clearAdminCache();
+
+      return null;
+
+    }
+
+
+    const session = {
+
+      id:
+        profile.id,
+
+      userId:
+        profile.user_id,
+
+      name:
+        profile.name ||
+        'Super Administrador',
+
+      email:
+        profile.email ||
+        '',
+
+      role:
+        profile.role ||
+        'super_admin',
+
+      status:
+        profile.status ||
+        'active',
+
+      loginAt:
+        new Date()
+          .toISOString(),
+
+      expiresAt:
+        authSession?.expires_at
+          ? new Date(
+              authSession.expires_at *
+              1000
+            ).toISOString()
+          : null
+
+    };
+
+
+    localStorage.setItem(
+      NEXGYM_ADMIN_AUTH_KEY,
+      'true'
+    );
+
+
+    localStorage.setItem(
+      NEXGYM_ADMIN_SESSION_KEY,
+      JSON.stringify(
+        session
+      )
+    );
+
+
+    localStorage.setItem(
+      NEXGYM_ADMIN_PROFILE_KEY,
+      JSON.stringify(
+        profile
+      )
+    );
+
+
+    emitAuthUpdate();
+
+
+    return session;
+
+  };
+
+
+// ======================================================
+// LEER PERFIL DE SUPABASE
+// ======================================================
+
+const getRemoteNexgymAdminProfile =
+  async (
+    userId
+  ) => {
+
+    if (
+      !userId
+    ) {
+
+      return {
+        success:
+          false,
+
+        message:
+          'No existe un usuario autenticado.'
+      };
+
+    }
+
+
+    const {
+      data,
+      error
+    } =
+      await supabase
+
+        .from(
+          'nexgym_admins'
+        )
+
+        .select(
+          `
+            id,
+            user_id,
+            name,
+            email,
+            role,
+            status,
+            last_access_at,
+            created_at,
+            updated_at
+          `
+        )
+
+        .eq(
+          'user_id',
+          userId
+        )
+
+        .maybeSingle();
+
+
+    if (
+      error
+    ) {
+
+      console.error(
+        'Error consultando nexgym_admins:',
+        error
+      );
+
+
+      return {
+        success:
+          false,
+
+        message:
+          'No se pudo validar la cuenta administrativa.',
+
+        error
+      };
+
+    }
+
+
+    if (
+      !data
+    ) {
+
+      return {
+        success:
+          false,
+
+        code:
+          'NOT_NEXGYM_ADMIN',
+
+        message:
+          'Esta cuenta no tiene acceso al panel NEXGYM.'
+      };
+
+    }
+
+
+    if (
+      data.role !==
+      'super_admin'
+    ) {
+
+      return {
+        success:
+          false,
+
+        code:
+          'INVALID_ROLE',
+
+        message:
+          'Esta cuenta no tiene permisos de Super Administrador.'
+      };
+
+    }
+
+
+    if (
+      data.status !==
+      'active'
+    ) {
+
+      return {
+        success:
+          false,
+
+        code:
+          'ADMIN_INACTIVE',
+
+        message:
+          'Esta cuenta administrativa está desactivada.'
+      };
+
+    }
+
+
+    return {
+      success:
+        true,
+
+      admin:
+        data
+    };
+
+  };
+
+
+// ======================================================
+// OBTENER ADMINISTRADORES
+// ======================================================
+//
+// Se conserva esta función para no romper componentes
+// antiguos que todavía puedan importarla.
+//
+// Ya NO devuelve contraseñas.
+//
 // ======================================================
 
 export const getNexgymAdminUsers =
@@ -106,33 +348,35 @@ export const getNexgymAdminUsers =
 
       const raw =
         localStorage.getItem(
-          NEXGYM_ADMIN_USERS_KEY
+          NEXGYM_ADMIN_PROFILE_KEY
         );
 
 
-      if (!raw) {
+      if (
+        !raw
+      ) {
 
         return [];
 
       }
 
 
-      const parsed =
+      const profile =
         JSON.parse(
           raw
         );
 
 
-      return Array.isArray(
-        parsed
-      )
-        ? parsed
+      return profile
+        ? [
+            profile
+          ]
         : [];
 
     } catch (error) {
 
       console.error(
-        'Error leyendo administradores NEXGYM:',
+        'Error leyendo cache del administrador NEXGYM:',
         error
       );
 
@@ -147,13 +391,20 @@ export const getNexgymAdminUsers =
 // ======================================================
 // GUARDAR ADMINISTRADORES
 // ======================================================
+//
+// Compatibilidad.
+//
+// Ya no utilizaremos esta función para almacenar
+// credenciales.
+//
+// ======================================================
 
 export const saveNexgymAdminUsers =
   (
     users
   ) => {
 
-    const safeUsers =
+    const list =
       Array.isArray(
         users
       )
@@ -161,102 +412,127 @@ export const saveNexgymAdminUsers =
         : [];
 
 
-    localStorage.setItem(
-      NEXGYM_ADMIN_USERS_KEY,
-      JSON.stringify(
-        safeUsers
-      )
-    );
+    const admin =
+      list[
+        0
+      ] ||
+      null;
 
 
-    window.dispatchEvent(
-      new Event(
-        'nexgym-admin-update'
-      )
-    );
+    if (
+      admin
+    ) {
+
+      localStorage.setItem(
+        NEXGYM_ADMIN_PROFILE_KEY,
+        JSON.stringify(
+          admin
+        )
+      );
+
+    }
 
 
-    return safeUsers;
+    return list;
 
   };
 
 
 // ======================================================
-// CREAR SUPER ADMIN INICIAL
+// PREPARAR / RESTAURAR ADMIN
+// ======================================================
+//
+// Antes esta función CREABA un administrador local.
+//
+// AHORA:
+// - consulta la sesión Supabase existente
+// - valida nexgym_admins
+// - reconstruye el cache
+//
 // ======================================================
 
 export const ensureDefaultNexgymAdmin =
   async () => {
 
-    const users =
-      getNexgymAdminUsers();
+    try {
+
+      const {
+        data,
+        error
+      } =
+        await supabase.auth
+          .getSession();
 
 
-    if (
-      users.length >
-      0
-    ) {
+      if (
+        error
+      ) {
 
-      return users;
+        throw error;
 
-    }
-
-
-    const now =
-      new Date()
-        .toISOString();
+      }
 
 
-    const passwordHash =
-      await hashValue(
-        DEFAULT_ADMIN_PASSWORD
+      const authSession =
+        data?.session ||
+        null;
+
+
+      if (
+        !authSession?.user?.id
+      ) {
+
+        clearAdminCache();
+
+        return [];
+
+      }
+
+
+      const profileResult =
+        await getRemoteNexgymAdminProfile(
+          authSession.user.id
+        );
+
+
+      if (
+        !profileResult.success
+      ) {
+
+        await supabase.auth
+          .signOut();
+
+        clearAdminCache();
+
+        return [];
+
+      }
+
+
+      saveAdminSession(
+        profileResult.admin,
+        authSession
       );
 
 
-    const admin = {
+      return [
+        profileResult.admin
+      ];
 
-      id:
-        createAdminId(),
+    } catch (error) {
 
-      name:
-        DEFAULT_ADMIN_NAME,
-
-      email:
-        normalizeEmail(
-          DEFAULT_ADMIN_EMAIL
-        ),
-
-      passwordHash,
-
-      role:
-        'super_admin',
-
-      status:
-        'active',
-
-      createdAt:
-        now,
-
-      updatedAt:
-        now,
-
-      lastAccessAt:
-        null,
-
-      passwordUpdatedAt:
-        null
-
-    };
+      console.error(
+        'Error restaurando sesión NEXGYM:',
+        error
+      );
 
 
-    saveNexgymAdminUsers([
-      admin
-    ]);
+      clearAdminCache();
 
 
-    return [
-      admin
-    ];
+      return [];
+
+    }
 
   };
 
@@ -273,9 +549,6 @@ export const authenticateNexgymAdmin =
 
     try {
 
-      await ensureDefaultNexgymAdmin();
-
-
       const normalizedEmail =
         normalizeEmail(
           email
@@ -284,7 +557,8 @@ export const authenticateNexgymAdmin =
 
       const normalizedPassword =
         String(
-          password || ''
+          password ||
+          ''
         );
 
 
@@ -294,7 +568,6 @@ export const authenticateNexgymAdmin =
       ) {
 
         return {
-
           success:
             false,
 
@@ -303,188 +576,144 @@ export const authenticateNexgymAdmin =
 
           message:
             'Ingresa tu correo y contraseña.'
-
         };
 
       }
 
 
-      const users =
-        getNexgymAdminUsers();
+      // ==================================================
+      // SUPABASE AUTH
+      // ==================================================
 
+      const {
+        data,
+        error
+      } =
+        await supabase.auth
+          .signInWithPassword({
 
-      const adminIndex =
-        users.findIndex(
-          user =>
-            normalizeEmail(
-              user.email
-            ) ===
-            normalizedEmail
-        );
+            email:
+              normalizedEmail,
+
+            password:
+              normalizedPassword
+
+          });
 
 
       if (
-        adminIndex ===
-        -1
+        error
       ) {
 
-        return {
+        console.error(
+          'Supabase Auth login:',
+          error
+        );
 
+
+        clearAdminCache();
+
+
+        return {
           success:
             false,
 
           code:
-            'USER_NOT_FOUND',
+            'INVALID_CREDENTIALS',
 
           message:
-            'No existe un administrador con este correo.'
-
+            'Correo o contraseña incorrectos.'
         };
 
       }
 
 
-      const admin =
-        users[
-          adminIndex
-        ];
+      const authUser =
+        data?.user;
+
+
+      const authSession =
+        data?.session;
 
 
       if (
-        admin.status !==
-        'active'
+        !authUser?.id ||
+        !authSession
       ) {
 
-        return {
+        clearAdminCache();
 
+
+        return {
           success:
             false,
 
           code:
-            'USER_INACTIVE',
+            'SESSION_ERROR',
 
           message:
-            'Esta cuenta administrativa está desactivada.'
-
+            'Supabase no pudo crear una sesión.'
         };
 
       }
 
 
-      const passwordHash =
-        await hashValue(
-          normalizedPassword
+      // ==================================================
+      // VALIDAR QUE SEA SUPER ADMIN
+      // ==================================================
+
+      const profileResult =
+        await getRemoteNexgymAdminProfile(
+          authUser.id
         );
 
 
       if (
-        passwordHash !==
-        admin.passwordHash
+        !profileResult.success
       ) {
 
-        return {
+        await supabase.auth
+          .signOut();
 
-          success:
-            false,
 
-          code:
-            'INVALID_PASSWORD',
+        clearAdminCache();
 
-          message:
-            'La contraseña es incorrecta.'
 
-        };
+        return profileResult;
 
       }
 
 
-      const now =
-        new Date()
-          .toISOString();
-
-
-      const session = {
-
-        id:
-          admin.id,
-
-        name:
-          admin.name,
-
-        email:
-          admin.email,
-
-        role:
-          'super_admin',
-
-        loginAt:
-          now
-
-      };
-
-
-      const updatedAdmin = {
-
-        ...admin,
-
-        lastAccessAt:
-          now,
-
-        updatedAt:
-          now
-
-      };
-
-
-      const updatedUsers =
-        users.map(
-          (
-            item,
-            index
-          ) =>
-            index ===
-            adminIndex
-              ? updatedAdmin
-              : item
+      const session =
+        saveAdminSession(
+          profileResult.admin,
+          authSession
         );
 
 
-      saveNexgymAdminUsers(
-        updatedUsers
-      );
+      console.log(
+        '✅ Super Admin NEXGYM autenticado con Supabase:',
+        {
+          id:
+            profileResult.admin.id,
 
+          email:
+            profileResult.admin.email,
 
-      localStorage.setItem(
-        NEXGYM_ADMIN_AUTH_KEY,
-        'true'
-      );
-
-
-      localStorage.setItem(
-        NEXGYM_ADMIN_SESSION_KEY,
-        JSON.stringify(
-          session
-        )
-      );
-
-
-      window.dispatchEvent(
-        new Event(
-          'nexgym-admin-auth-update'
-        )
+          role:
+            profileResult.admin.role
+        }
       );
 
 
       return {
-
         success:
           true,
 
         admin:
-          updatedAdmin,
+          profileResult.admin,
 
         session
-
       };
 
     } catch (error) {
@@ -495,8 +724,10 @@ export const authenticateNexgymAdmin =
       );
 
 
-      return {
+      clearAdminCache();
 
+
+      return {
         success:
           false,
 
@@ -505,7 +736,6 @@ export const authenticateNexgymAdmin =
 
         message:
           'No se pudo iniciar sesión.'
-
       };
 
     }
@@ -515,6 +745,15 @@ export const authenticateNexgymAdmin =
 
 // ======================================================
 // OBTENER SESIÓN
+// ======================================================
+//
+// Esta función sigue siendo SÍNCRONA.
+//
+// Eso permite conservar:
+// - NexgymProtectedRoute
+// - NexgymAdminLayout
+// - NexgymSidebar
+//
 // ======================================================
 
 export const getCurrentNexgymAdminSession =
@@ -544,7 +783,9 @@ export const getCurrentNexgymAdminSession =
         );
 
 
-      if (!raw) {
+      if (
+        !raw
+      ) {
 
         return null;
 
@@ -558,55 +799,42 @@ export const getCurrentNexgymAdminSession =
 
 
       if (
-        !session?.id
+        !session?.id ||
+        !session?.userId
       ) {
 
-        logoutNexgymAdmin();
+        clearAdminCache();
 
         return null;
 
       }
-
-
-      const users =
-        getNexgymAdminUsers();
-
-
-      const admin =
-        users.find(
-          user =>
-            user.id ===
-            session.id
-        );
 
 
       if (
-        !admin ||
-        admin.status !==
-        'active'
+        session.role !==
+        'super_admin'
       ) {
 
-        logoutNexgymAdmin();
+        clearAdminCache();
 
         return null;
 
       }
 
 
-      return {
+      if (
+        session.status !==
+        'active'
+      ) {
 
-        ...session,
+        clearAdminCache();
 
-        name:
-          admin.name,
+        return null;
 
-        email:
-          admin.email,
+      }
 
-        role:
-          'super_admin'
 
-      };
+      return session;
 
     } catch (error) {
 
@@ -614,6 +842,9 @@ export const getCurrentNexgymAdminSession =
         'Error leyendo sesión NEXGYM:',
         error
       );
+
+
+      clearAdminCache();
 
 
       return null;
@@ -644,21 +875,24 @@ export const isNexgymAdminAuthenticated =
 export const logoutNexgymAdmin =
   () => {
 
-    localStorage.removeItem(
-      NEXGYM_ADMIN_AUTH_KEY
-    );
+    // Limpiamos inmediatamente para que React Router
+    // pueda reaccionar sin esperar la petición.
+
+    clearAdminCache();
 
 
-    localStorage.removeItem(
-      NEXGYM_ADMIN_SESSION_KEY
-    );
+    void supabase.auth
+      .signOut()
+      .catch(
+        error => {
 
+          console.error(
+            'Error cerrando sesión Supabase:',
+            error
+          );
 
-    window.dispatchEvent(
-      new Event(
-        'nexgym-admin-auth-update'
-      )
-    );
+        }
+      );
 
   };
 
@@ -679,16 +913,16 @@ export const changeNexgymAdminPassword =
         getCurrentNexgymAdminSession();
 
 
-      if (!session) {
+      if (
+        !session
+      ) {
 
         return {
-
           success:
             false,
 
           message:
             'No existe una sesión administrativa.'
-
         };
 
       }
@@ -696,13 +930,15 @@ export const changeNexgymAdminPassword =
 
       const current =
         String(
-          currentPassword || ''
+          currentPassword ||
+          ''
         );
 
 
       const next =
         String(
-          newPassword || ''
+          newPassword ||
+          ''
         );
 
 
@@ -712,13 +948,11 @@ export const changeNexgymAdminPassword =
       ) {
 
         return {
-
           success:
             false,
 
           message:
             'Completa todos los campos.'
-
         };
 
       }
@@ -730,73 +964,11 @@ export const changeNexgymAdminPassword =
       ) {
 
         return {
-
           success:
             false,
 
           message:
             'La nueva contraseña debe tener al menos 8 caracteres.'
-
-        };
-
-      }
-
-
-      const users =
-        getNexgymAdminUsers();
-
-
-      const index =
-        users.findIndex(
-          user =>
-            user.id ===
-            session.id
-        );
-
-
-      if (
-        index ===
-        -1
-      ) {
-
-        return {
-
-          success:
-            false,
-
-          message:
-            'No se encontró el administrador.'
-
-        };
-
-      }
-
-
-      const admin =
-        users[
-          index
-        ];
-
-
-      const currentHash =
-        await hashValue(
-          current
-        );
-
-
-      if (
-        currentHash !==
-        admin.passwordHash
-      ) {
-
-        return {
-
-          success:
-            false,
-
-          message:
-            'La contraseña actual es incorrecta.'
-
         };
 
       }
@@ -808,64 +980,96 @@ export const changeNexgymAdminPassword =
       ) {
 
         return {
-
           success:
             false,
 
           message:
-            'La nueva contraseña debe ser diferente.'
-
+            'La nueva contraseña debe ser diferente a la actual.'
         };
 
       }
 
 
-      const newHash =
-        await hashValue(
-          next
+      // ==================================================
+      // CONFIRMAR CONTRASEÑA ACTUAL
+      // ==================================================
+
+      const {
+        error:
+          verifyError
+      } =
+        await supabase.auth
+          .signInWithPassword({
+
+            email:
+              session.email,
+
+            password:
+              current
+
+          });
+
+
+      if (
+        verifyError
+      ) {
+
+        return {
+          success:
+            false,
+
+          message:
+            'La contraseña actual es incorrecta.'
+        };
+
+      }
+
+
+      // ==================================================
+      // CAMBIAR EN SUPABASE AUTH
+      // ==================================================
+
+      const {
+        error:
+          updateError
+      } =
+        await supabase.auth
+          .updateUser({
+
+            password:
+              next
+
+          });
+
+
+      if (
+        updateError
+      ) {
+
+        console.error(
+          'Error actualizando contraseña:',
+          updateError
         );
 
 
-      const now =
-        new Date()
-          .toISOString();
+        return {
+          success:
+            false,
 
+          message:
+            updateError.message ||
+            'No se pudo actualizar la contraseña.'
+        };
 
-      const updated = {
-
-        ...admin,
-
-        passwordHash:
-          newHash,
-
-        passwordUpdatedAt:
-          now,
-
-        updatedAt:
-          now
-
-      };
-
-
-      users[
-        index
-      ] =
-        updated;
-
-
-      saveNexgymAdminUsers(
-        users
-      );
+      }
 
 
       return {
-
         success:
           true,
 
         message:
           'Contraseña actualizada correctamente.'
-
       };
 
     } catch (error) {
@@ -877,13 +1081,11 @@ export const changeNexgymAdminPassword =
 
 
       return {
-
         success:
           false,
 
         message:
-          'No se pudo cambiar la contraseña.'
-
+          'No se pudo actualizar la contraseña.'
       };
 
     }
@@ -892,20 +1094,46 @@ export const changeNexgymAdminPassword =
 
 
 // ======================================================
-// DATOS DE DESARROLLO
+// CREDENCIALES DEFAULT
+// ======================================================
+//
+// Se conserva por compatibilidad.
+//
+// Ya NO existen credenciales de desarrollo
+// predeterminadas.
+//
 // ======================================================
 
 export const getDefaultNexgymAdminCredentials =
   () => {
 
     return {
-
       email:
-        DEFAULT_ADMIN_EMAIL,
-
+        '',
       password:
-        DEFAULT_ADMIN_PASSWORD
-
+        ''
     };
 
   };
+
+
+// ======================================================
+// ESCUCHAR LOGOUT DE SUPABASE
+// ======================================================
+
+supabase.auth.onAuthStateChange(
+  (
+    event
+  ) => {
+
+    if (
+      event ===
+      'SIGNED_OUT'
+    ) {
+
+      clearAdminCache();
+
+    }
+
+  }
+);

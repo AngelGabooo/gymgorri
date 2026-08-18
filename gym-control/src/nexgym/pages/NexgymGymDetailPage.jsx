@@ -43,15 +43,18 @@ import {
 
 import {
   addNexgymGymNote,
-  deactivateNexgymGym,
-  extendNexgymService,
-  getNexgymActivity,
-  getNexgymGymDetails,
-  reactivateNexgymGym,
-  registerNexgymPayment,
-  resetNexgymGymPassword,
-  suspendNexgymGym
+  resetNexgymGymPassword
 } from '../services/nexgymGymService';
+
+import {
+  deactivateNexgymCloudGym,
+  extendNexgymCloudService,
+  getNexgymCloudActivity,
+  getNexgymCloudGymById,
+  reactivateNexgymCloudGym,
+  registerNexgymCloudPayment,
+  suspendNexgymCloudGym
+} from '../services/nexgymCloudGymService.js';
 
 
 // ======================================================
@@ -74,6 +77,24 @@ const NexgymGymDetailPage = () => {
     gym,
     setGym
   ] = useState(null);
+
+
+  const [
+    loadingGym,
+    setLoadingGym
+  ] = useState(true);
+
+
+  const [
+    gymLoadError,
+    setGymLoadError
+  ] = useState('');
+
+
+  const [
+    activity,
+    setActivity
+  ] = useState([]);
 
 
   const [
@@ -107,13 +128,87 @@ const NexgymGymDetailPage = () => {
   // ======================================================
 
   const loadGym =
-    () => {
+    async () => {
 
-      setGym(
-        getNexgymGymDetails(
-          id
-        )
-      );
+      try {
+
+        setLoadingGym(true);
+
+        setGymLoadError('');
+
+
+        const [
+          gymResult,
+          activityResult
+        ] =
+          await Promise.all([
+            getNexgymCloudGymById(
+              id
+            ),
+            getNexgymCloudActivity(
+              id,
+              30
+            )
+          ]);
+
+
+        if (
+          gymResult.success &&
+          gymResult.gym
+        ) {
+
+          setGym(
+            gymResult.gym
+          );
+
+        } else {
+
+          setGym(null);
+
+          setGymLoadError(
+            gymResult.message ||
+            'Gimnasio no encontrado.'
+          );
+
+        }
+
+
+        if (
+          activityResult.success
+        ) {
+
+          setActivity(
+            activityResult.activity ||
+            []
+          );
+
+        } else {
+
+          setActivity([]);
+
+        }
+
+      } catch (error) {
+
+        console.error(
+          '❌ Error cargando detalle NEXGYM:',
+          error
+        );
+
+        setGym(null);
+
+        setActivity([]);
+
+        setGymLoadError(
+          error?.message ||
+          'No se pudo cargar el gimnasio.'
+        );
+
+      } finally {
+
+        setLoadingGym(false);
+
+      }
 
     };
 
@@ -121,17 +216,11 @@ const NexgymGymDetailPage = () => {
   useEffect(
     () => {
 
-      loadGym();
+      void loadGym();
 
 
       window.addEventListener(
         'nexgym-gyms-update',
-        loadGym
-      );
-
-
-      window.addEventListener(
-        'gym-storage-update',
         loadGym
       );
 
@@ -143,11 +232,6 @@ const NexgymGymDetailPage = () => {
           loadGym
         );
 
-
-        window.removeEventListener(
-          'gym-storage-update',
-          loadGym
-        );
 
       };
 
@@ -161,28 +245,11 @@ const NexgymGymDetailPage = () => {
   // ======================================================
   // ACTIVIDAD
   // ======================================================
-
-  const activity =
-    useMemo(
-      () => {
-
-        return getNexgymActivity()
-          .filter(
-            item =>
-              item.gymId ===
-              id
-          )
-          .slice(
-            0,
-            30
-          );
-
-      },
-      [
-        id,
-        gym
-      ]
-    );
+  //
+  // La actividad ahora se carga desde Supabase junto
+  // con el gimnasio dentro de loadGym().
+  //
+  // ======================================================
 
 
   // ======================================================
@@ -352,6 +419,41 @@ const NexgymGymDetailPage = () => {
 
 
   // ======================================================
+  // CARGANDO
+  // ======================================================
+
+  if (
+    loadingGym
+  ) {
+
+    return (
+
+      <div className="p-8">
+
+        <div className="bg-[#111111] border border-[#202020] rounded-2xl p-12 text-center">
+
+          <RefreshCw
+            className="w-10 h-10 text-[#00ff88] mx-auto animate-spin"
+          />
+
+          <h2 className="text-white text-xl font-semibold mt-4">
+            Cargando gimnasio
+          </h2>
+
+          <p className="text-gray-600 text-sm mt-2">
+            Consultando la información en Supabase...
+          </p>
+
+        </div>
+
+      </div>
+
+    );
+
+  }
+
+
+  // ======================================================
   // NO ENCONTRADO
   // ======================================================
 
@@ -372,7 +474,7 @@ const NexgymGymDetailPage = () => {
           </h2>
 
           <p className="text-gray-600 text-sm mt-2">
-            Este cliente no existe en NEXGYM.
+            {gymLoadError || 'Este cliente no existe en NEXGYM.'}
           </p>
 
           <button
@@ -652,23 +754,55 @@ const NexgymGymDetailPage = () => {
 
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
 
-                const result =
-                  extendNexgymService(
-                    gym.id,
-                    1
+                try {
+
+                  setActionError(
+                    ''
                   );
 
 
-                if (
-                  result.success
-                ) {
+                  const result =
+                    await extendNexgymCloudService(
+                      gym.id,
+                      1
+                    );
 
-                  loadGym();
+
+                  if (
+                    !result.success
+                  ) {
+
+                    setActionError(
+                      result.message ||
+                      'No se pudo extender el servicio.'
+                    );
+
+
+                    return;
+
+                  }
+
+
+                  await loadGym();
+
 
                   showSuccess(
-                    'Servicio extendido un mes.'
+                    `Servicio extendido hasta ${result.nextPaymentDate || 'la nueva fecha'}.`
+                  );
+
+                } catch (error) {
+
+                  console.error(
+                    '❌ Error extendiendo servicio:',
+                    error
+                  );
+
+
+                  setActionError(
+                    error?.message ||
+                    'No se pudo extender el servicio.'
                   );
 
                 }
@@ -1888,41 +2022,65 @@ const NexgymGymDetailPage = () => {
 
             }}
             onSave={
-              data => {
+              async data => {
 
-                const result =
-                  registerNexgymPayment(
-                    gym.id,
-                    data
-                  );
-
-
-                if (
-                  !result.success
-                ) {
+                try {
 
                   setActionError(
-                    result.message
+                    ''
                   );
 
-                  return;
+
+                  const result =
+                    await registerNexgymCloudPayment(
+                      gym.id,
+                      data
+                    );
+
+
+                  if (
+                    !result.success
+                  ) {
+
+                    setActionError(
+                      result.message
+                    );
+
+                    return;
+
+                  }
+
+
+                  await loadGym();
+
+                  setModal(
+                    null
+                  );
+
+                  setActionError(
+                    ''
+                  );
+
+                  showSuccess(
+                    'Pago registrado correctamente.'
+                  );
+
+                } catch (
+                  error
+                ) {
+
+                  console.error(
+                    '❌ Error registrando pago:',
+                    error
+                  );
+
+
+                  setActionError(
+                    error?.message ||
+                    'No se pudo registrar el pago.'
+                  );
 
                 }
-
-
-                loadGym();
-
-                setModal(
-                  null
-                );
-
-                setActionError(
-                  ''
-                );
-
-                showSuccess(
-                  'Pago registrado correctamente.'
-                );
 
               }
             }
@@ -1960,10 +2118,10 @@ const NexgymGymDetailPage = () => {
 
             }}
             onConfirm={
-              reason => {
+              async reason => {
 
                 const result =
-                  suspendNexgymGym(
+                  await suspendNexgymCloudGym(
                     gym.id,
                     reason
                   );
@@ -1982,7 +2140,7 @@ const NexgymGymDetailPage = () => {
                 }
 
 
-                loadGym();
+                await loadGym();
 
                 setModal(
                   null
@@ -2028,10 +2186,10 @@ const NexgymGymDetailPage = () => {
 
             }}
             onConfirm={
-              reason => {
+              async reason => {
 
                 const result =
-                  deactivateNexgymGym(
+                  await deactivateNexgymCloudGym(
                     gym.id,
                     reason
                   );
@@ -2050,7 +2208,7 @@ const NexgymGymDetailPage = () => {
                 }
 
 
-                loadGym();
+                await loadGym();
 
                 setModal(
                   null
@@ -2082,10 +2240,10 @@ const NexgymGymDetailPage = () => {
                 null
               )
             }
-            onConfirm={() => {
+            onConfirm={async () => {
 
               const result =
-                reactivateNexgymGym(
+                await reactivateNexgymCloudGym(
                   gym.id
                 );
 
@@ -2094,7 +2252,7 @@ const NexgymGymDetailPage = () => {
                 result.success
               ) {
 
-                loadGym();
+                await loadGym();
 
                 setModal(
                   null

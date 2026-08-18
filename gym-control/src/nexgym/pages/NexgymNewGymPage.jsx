@@ -24,8 +24,7 @@ import {
 
 import {
   createNexgymGym
-} from '../services/nexgymGymService';
-
+} from '../services/nexgymCloudGymService.js';
 
 // ======================================================
 // ESTADO INICIAL

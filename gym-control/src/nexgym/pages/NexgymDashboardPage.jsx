@@ -25,9 +25,9 @@ import {
 } from 'lucide-react';
 
 import {
-  getNexgymActivity,
-  getNexgymGymsWithStats
-} from '../services/nexgymGymService';
+  getNexgymCloudActivity,
+  getNexgymCloudGyms
+} from '../services/nexgymCloudGymService.js';
 
 
 // ======================================================
@@ -57,16 +57,72 @@ const NexgymDashboardPage = () => {
   // ======================================================
 
   const loadData =
-    () => {
+    async () => {
 
-      setGyms(
-        getNexgymGymsWithStats()
-      );
+      try {
+
+        const [
+          gymsResult,
+          activityResult
+        ] =
+          await Promise.all([
+            getNexgymCloudGyms(),
+            getNexgymCloudActivity()
+          ]);
 
 
-      setActivity(
-        getNexgymActivity()
-      );
+        if (
+          gymsResult.success
+        ) {
+
+          setGyms(
+            gymsResult.gyms ||
+            []
+          );
+
+        } else {
+
+          console.error(
+            '❌ No se pudieron cargar los gimnasios del Dashboard:',
+            gymsResult
+          );
+
+          setGyms([]);
+
+        }
+
+
+        if (
+          activityResult.success
+        ) {
+
+          setActivity(
+            activityResult.activity ||
+            []
+          );
+
+        } else {
+
+          console.error(
+            '❌ No se pudo cargar la actividad del Dashboard:',
+            activityResult
+          );
+
+          setActivity([]);
+
+        }
+
+      } catch (error) {
+
+        console.error(
+          '❌ Error cargando Dashboard NEXGYM:',
+          error
+        );
+
+        setGyms([]);
+        setActivity([]);
+
+      }
 
     };
 
@@ -74,7 +130,7 @@ const NexgymDashboardPage = () => {
   useEffect(
     () => {
 
-      loadData();
+      void loadData();
 
 
       window.addEventListener(
@@ -85,12 +141,6 @@ const NexgymDashboardPage = () => {
 
       window.addEventListener(
         'nexgym-activity-update',
-        loadData
-      );
-
-
-      window.addEventListener(
-        'gym-storage-update',
         loadData
       );
 
@@ -108,11 +158,6 @@ const NexgymDashboardPage = () => {
           loadData
         );
 
-
-        window.removeEventListener(
-          'gym-storage-update',
-          loadData
-        );
 
       };
 

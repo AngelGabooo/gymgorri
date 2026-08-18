@@ -1,6 +1,7 @@
 // src/nexgym/pages/NexgymSettingsPage.jsx
 
 import React, {
+  useCallback,
   useEffect,
   useState
 } from 'react';
@@ -15,802 +16,1489 @@ import {
   CreditCard,
   RotateCcw,
   KeyRound,
-  CheckCircle2
+  CheckCircle2,
+  AlertCircle,
+  LoaderCircle,
+  RefreshCcw,
+  Cloud
 } from 'lucide-react';
 
 import {
   getNexgymSettings,
+  loadNexgymSettings,
   resetNexgymSettings,
   saveNexgymSettings
-} from '../services/nexgymSettingsService';
+} from '../services/nexgymSettingsService.js';
 
 import {
   changeNexgymAdminPassword,
   getCurrentNexgymAdminSession
-} from '../services/nexgymAdminAuthService';
+} from '../services/nexgymAdminAuthService.js';
 
 
-const NexgymSettingsPage = () => {
+// ======================================================
+// PAGE
+// ======================================================
 
-  const [
-    settings,
-    setSettings
-  ] = useState(
-    getNexgymSettings()
-  );
+const NexgymSettingsPage =
+  () => {
 
+    // ====================================================
+    // SETTINGS
+    // ====================================================
 
-  const [
-    saved,
-    setSaved
-  ] = useState(false);
-
-
-  const [
-    currentPassword,
-    setCurrentPassword
-  ] = useState('');
+    const [
+      settings,
+      setSettings
+    ] = useState(
+      getNexgymSettings()
+    );
 
 
-  const [
-    newPassword,
-    setNewPassword
-  ] = useState('');
+    const [
+      loading,
+      setLoading
+    ] = useState(true);
 
 
-  const [
-    confirmPassword,
-    setConfirmPassword
-  ] = useState('');
+    const [
+      saving,
+      setSaving
+    ] = useState(false);
 
 
-  const [
-    passwordError,
-    setPasswordError
-  ] = useState('');
+    const [
+      resetting,
+      setResetting
+    ] = useState(false);
 
 
-  const [
-    passwordSuccess,
-    setPasswordSuccess
-  ] = useState('');
+    const [
+      saved,
+      setSaved
+    ] = useState(false);
 
 
-  const admin =
-    getCurrentNexgymAdminSession();
+    const [
+      settingsError,
+      setSettingsError
+    ] = useState('');
 
 
-  useEffect(
-    () => {
+    // ====================================================
+    // PASSWORD
+    // ====================================================
 
-      const reload =
-        () =>
-          setSettings(
-            getNexgymSettings()
-          );
+    const [
+      currentPassword,
+      setCurrentPassword
+    ] = useState('');
 
 
-      window.addEventListener(
-        'nexgym-settings-update',
-        reload
+    const [
+      newPassword,
+      setNewPassword
+    ] = useState('');
+
+
+    const [
+      confirmPassword,
+      setConfirmPassword
+    ] = useState('');
+
+
+    const [
+      passwordError,
+      setPasswordError
+    ] = useState('');
+
+
+    const [
+      passwordSuccess,
+      setPasswordSuccess
+    ] = useState('');
+
+
+    const [
+      changingPassword,
+      setChangingPassword
+    ] = useState(false);
+
+
+    // ====================================================
+    // ADMIN
+    // ====================================================
+
+    const admin =
+      getCurrentNexgymAdminSession();
+
+
+    // ====================================================
+    // CARGAR CLOUD
+    // ====================================================
+
+    const loadSettings =
+      useCallback(
+        async () => {
+
+          try {
+
+            setLoading(
+              true
+            );
+
+
+            setSettingsError(
+              ''
+            );
+
+
+            const result =
+              await loadNexgymSettings();
+
+
+            if (
+              !result.success
+            ) {
+
+              setSettings(
+                result.settings ||
+                getNexgymSettings()
+              );
+
+
+              setSettingsError(
+                result.message ||
+                'No se pudo cargar la configuración.'
+              );
+
+
+              return;
+
+            }
+
+
+            setSettings(
+              result.settings
+            );
+
+          } catch (
+            error
+          ) {
+
+            console.error(
+              '❌ Error cargando configuración:',
+              error
+            );
+
+
+            setSettingsError(
+              error?.message ||
+              'No se pudo cargar la configuración.'
+            );
+
+          } finally {
+
+            setLoading(
+              false
+            );
+
+          }
+
+        },
+        []
       );
 
 
-      return () =>
-        window.removeEventListener(
+    // ====================================================
+    // INIT
+    // ====================================================
+
+    useEffect(
+      () => {
+
+        void loadSettings();
+
+
+        const reload =
+          () => {
+
+            setSettings(
+              getNexgymSettings()
+            );
+
+          };
+
+
+        window.addEventListener(
           'nexgym-settings-update',
           reload
         );
 
-    },
-    []
-  );
+
+        return () => {
+
+          window.removeEventListener(
+            'nexgym-settings-update',
+            reload
+          );
+
+        };
+
+      },
+      [
+        loadSettings
+      ]
+    );
 
 
-  const update =
-    (
-      key,
-      value
-    ) => {
+    // ====================================================
+    // UPDATE SIMPLE
+    // ====================================================
 
-      setSettings(
-        previous => ({
+    const update =
+      (
+        key,
+        value
+      ) => {
 
-          ...previous,
+        setSettings(
+          previous => ({
 
-          [key]:
-            value
-
-        })
-      );
-
-  };
-
-
-  const updateNested =
-    (
-      group,
-      key,
-      value
-    ) => {
-
-      setSettings(
-        previous => ({
-
-          ...previous,
-
-          [group]: {
-
-            ...(previous[
-              group
-            ] || {}),
+            ...previous,
 
             [key]:
               value
 
-          }
-
-        })
-      );
-
-  };
+          })
+        );
 
 
-  const handleSave =
-    () => {
+        setSaved(
+          false
+        );
 
-      const normalized = {
 
-        ...settings,
-
-        defaultMonthlyPrice:
-          Math.max(
-            0,
-            Number(
-              settings.defaultMonthlyPrice ||
-              0
-            )
-          ),
-
-        graceDays:
-          Math.max(
-            0,
-            Number(
-              settings.graceDays ||
-              0
-            )
-          ),
-
-        defaultTrialDays:
-          Math.max(
-            0,
-            Number(
-              settings.defaultTrialDays ||
-              0
-            )
-          )
+        setSettingsError(
+          ''
+        );
 
       };
 
 
-      saveNexgymSettings(
-        normalized
-      );
+    // ====================================================
+    // UPDATE NESTED
+    // ====================================================
+
+    const updateNested =
+      (
+        group,
+        key,
+        value
+      ) => {
+
+        setSettings(
+          previous => ({
+
+            ...previous,
+
+            [group]: {
+
+              ...(previous[
+                group
+              ] || {}),
+
+              [key]:
+                value
+
+            }
+
+          })
+        );
 
 
-      setSettings(
-        normalized
-      );
+        setSaved(
+          false
+        );
 
 
-      setSaved(
-        true
-      );
+        setSettingsError(
+          ''
+        );
+
+      };
 
 
-      setTimeout(
-        () =>
+    // ====================================================
+    // NORMALIZAR FORM
+    // ====================================================
+
+    const getNormalizedForm =
+      () => {
+
+        return {
+
+          ...settings,
+
+          defaultMonthlyPrice:
+            Math.max(
+              0,
+              Number(
+                settings.defaultMonthlyPrice ||
+                0
+              )
+            ),
+
+          graceDays:
+            Math.max(
+              0,
+              Math.floor(
+                Number(
+                  settings.graceDays ||
+                  0
+                )
+              )
+            ),
+
+          defaultTrialDays:
+            Math.max(
+              0,
+              Math.floor(
+                Number(
+                  settings.defaultTrialDays ||
+                  0
+                )
+              )
+            )
+
+        };
+
+      };
+
+
+    // ====================================================
+    // GUARDAR
+    // ====================================================
+
+    const handleSave =
+      async () => {
+
+        if (
+          saving
+        ) {
+
+          return;
+
+        }
+
+
+        try {
+
+          setSaving(
+            true
+          );
+
+
           setSaved(
             false
-          ),
-        2500
-      );
-
-  };
+          );
 
 
-  const handleReset =
-    () => {
-
-      if (
-        !window.confirm(
-          '¿Restaurar la configuración predeterminada de NEXGYM?'
-        )
-      ) {
-
-        return;
-
-      }
+          setSettingsError(
+            ''
+          );
 
 
-      setSettings(
-        resetNexgymSettings()
-      );
-
-  };
+          const normalized =
+            getNormalizedForm();
 
 
-  const handlePassword =
-    async () => {
-
-      setPasswordError('');
-
-      setPasswordSuccess('');
+          const result =
+            await saveNexgymSettings(
+              normalized
+            );
 
 
-      if (
-        newPassword !==
-        confirmPassword
-      ) {
+          if (
+            !result.success
+          ) {
+
+            setSettingsError(
+              result.message ||
+              'No se pudo guardar la configuración.'
+            );
+
+
+            return;
+
+          }
+
+
+          setSettings(
+            result.settings
+          );
+
+
+          setSaved(
+            true
+          );
+
+
+          window.setTimeout(
+            () => {
+
+              setSaved(
+                false
+              );
+
+            },
+            2500
+          );
+
+        } catch (
+          error
+        ) {
+
+          console.error(
+            '❌ Error guardando configuración:',
+            error
+          );
+
+
+          setSettingsError(
+            error?.message ||
+            'No se pudo guardar la configuración.'
+          );
+
+        } finally {
+
+          setSaving(
+            false
+          );
+
+        }
+
+      };
+
+
+    // ====================================================
+    // RESET
+    // ====================================================
+
+    const handleReset =
+      async () => {
+
+        if (
+          resetting
+        ) {
+
+          return;
+
+        }
+
+
+        const confirmed =
+          window.confirm(
+            '¿Restaurar la configuración predeterminada de NEXGYM? Esto actualizará la configuración guardada en Supabase.'
+          );
+
+
+        if (
+          !confirmed
+        ) {
+
+          return;
+
+        }
+
+
+        try {
+
+          setResetting(
+            true
+          );
+
+
+          setSettingsError(
+            ''
+          );
+
+
+          setSaved(
+            false
+          );
+
+
+          const result =
+            await resetNexgymSettings();
+
+
+          if (
+            !result.success
+          ) {
+
+            setSettingsError(
+              result.message ||
+              'No se pudieron restaurar los valores.'
+            );
+
+
+            return;
+
+          }
+
+
+          setSettings(
+            result.settings
+          );
+
+
+          setSaved(
+            true
+          );
+
+
+          window.setTimeout(
+            () => {
+
+              setSaved(
+                false
+              );
+
+            },
+            2500
+          );
+
+        } catch (
+          error
+        ) {
+
+          console.error(
+            '❌ Error restaurando configuración:',
+            error
+          );
+
+
+          setSettingsError(
+            error?.message ||
+            'No se pudieron restaurar los valores.'
+          );
+
+        } finally {
+
+          setResetting(
+            false
+          );
+
+        }
+
+      };
+
+
+    // ====================================================
+    // CAMBIAR PASSWORD
+    // ====================================================
+
+    const handlePassword =
+      async () => {
+
+        if (
+          changingPassword
+        ) {
+
+          return;
+
+        }
+
 
         setPasswordError(
-          'Las nuevas contraseñas no coinciden.'
-        );
-
-        return;
-
-      }
-
-
-      const result =
-        await changeNexgymAdminPassword(
-          currentPassword,
-          newPassword
+          ''
         );
 
 
-      if (
-        !result.success
-      ) {
-
-        setPasswordError(
-          result.message
+        setPasswordSuccess(
+          ''
         );
 
-        return;
 
-      }
+        if (
+          !currentPassword
+        ) {
 
-
-      setCurrentPassword('');
-
-      setNewPassword('');
-
-      setConfirmPassword('');
+          setPasswordError(
+            'Ingresa tu contraseña actual.'
+          );
 
 
-      setPasswordSuccess(
-        result.message
-      );
+          return;
 
-  };
+        }
 
 
-  return (
+        if (
+          !newPassword
+        ) {
 
-    <div className="p-8">
+          setPasswordError(
+            'Ingresa la nueva contraseña.'
+          );
 
-      {
-        saved &&
-        (
 
-          <div className="fixed top-6 right-6 z-[100] bg-[#111111] border border-[#00ff88]/30 rounded-xl px-4 py-3 flex items-center gap-3 shadow-xl">
+          return;
 
-            <CheckCircle2
-              className="w-5 h-5 text-[#00ff88]"
+        }
+
+
+        if (
+          newPassword.length <
+          8
+        ) {
+
+          setPasswordError(
+            'La nueva contraseña debe tener al menos 8 caracteres.'
+          );
+
+
+          return;
+
+        }
+
+
+        if (
+          newPassword !==
+          confirmPassword
+        ) {
+
+          setPasswordError(
+            'Las nuevas contraseñas no coinciden.'
+          );
+
+
+          return;
+
+        }
+
+
+        try {
+
+          setChangingPassword(
+            true
+          );
+
+
+          const result =
+            await changeNexgymAdminPassword(
+              currentPassword,
+              newPassword
+            );
+
+
+          if (
+            !result.success
+          ) {
+
+            setPasswordError(
+              result.message ||
+              'No se pudo cambiar la contraseña.'
+            );
+
+
+            return;
+
+          }
+
+
+          setCurrentPassword(
+            ''
+          );
+
+
+          setNewPassword(
+            ''
+          );
+
+
+          setConfirmPassword(
+            ''
+          );
+
+
+          setPasswordSuccess(
+            result.message ||
+            'Contraseña actualizada correctamente.'
+          );
+
+        } catch (
+          error
+        ) {
+
+          console.error(
+            '❌ Error cambiando contraseña:',
+            error
+          );
+
+
+          setPasswordError(
+            error?.message ||
+            'No se pudo cambiar la contraseña.'
+          );
+
+        } finally {
+
+          setChangingPassword(
+            false
+          );
+
+        }
+
+      };
+
+
+    // ====================================================
+    // LOADING
+    // ====================================================
+
+    if (
+      loading
+    ) {
+
+      return (
+
+        <div className="p-8">
+
+          <div className="min-h-[420px] bg-[#111111] border border-[#202020] rounded-2xl flex flex-col items-center justify-center">
+
+            <LoaderCircle
+              className="w-10 h-10 text-[#00ff88] animate-spin"
             />
 
-            <p className="text-white text-sm">
-              Configuración guardada
+
+            <p className="text-white text-sm font-medium mt-4">
+              Cargando configuración
+            </p>
+
+
+            <p className="text-gray-600 text-xs mt-1">
+              Sincronizando NEXGYM con Supabase...
             </p>
 
           </div>
 
-        )
-      }
+        </div>
 
+      );
 
-      <div className="space-y-5">
+    }
 
 
-        {/* PLATAFORMA */}
+    // ====================================================
+    // RENDER
+    // ====================================================
 
-        <Section
-          icon={
-            Settings
-          }
-          title="Plataforma"
-          subtitle="Información general de NEXGYM"
-        >
+    return (
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="p-8">
 
-            <Input
-              label="Nombre de la plataforma"
-              value={
-                settings.platformName
-              }
-              onChange={
-                value =>
-                  update(
-                    'platformName',
-                    value
-                  )
-              }
-            />
+        {/* ================================================== */}
+        {/* TOAST */}
+        {/* ================================================== */}
 
-            <Input
-              label="Empresa"
-              value={
-                settings.companyName
-              }
-              onChange={
-                value =>
-                  update(
-                    'companyName',
-                    value
-                  )
-              }
-            />
+        {
+          saved &&
+          (
 
-          </div>
+            <div className="fixed top-6 right-6 z-[100] bg-[#111111] border border-[#00ff88]/30 rounded-xl px-4 py-3 flex items-center gap-3 shadow-xl">
 
-        </Section>
-
-
-        {/* NEGOCIO */}
-
-        <Section
-          icon={
-            DollarSign
-          }
-          title="Servicio y renta"
-          subtitle="Valores predeterminados para nuevos clientes"
-        >
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-            <Input
-              label="Precio mensual predeterminado"
-              type="number"
-              value={
-                settings.defaultMonthlyPrice
-              }
-              onChange={
-                value =>
-                  update(
-                    'defaultMonthlyPrice',
-                    value
-                  )
-              }
-            />
-
-            <Input
-              label="Días de gracia"
-              type="number"
-              value={
-                settings.graceDays
-              }
-              onChange={
-                value =>
-                  update(
-                    'graceDays',
-                    value
-                  )
-              }
-            />
-
-            <Input
-              label="Días de prueba predeterminados"
-              type="number"
-              value={
-                settings.defaultTrialDays
-              }
-              onChange={
-                value =>
-                  update(
-                    'defaultTrialDays',
-                    value
-                  )
-              }
-            />
-
-          </div>
-
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-5">
-
-            <Toggle
-              label="Marcar pago vencido automáticamente"
-              description="Cuando pase la fecha de próximo pago, cambiar a Pago pendiente."
-              checked={
-                settings.autoPastDue
-              }
-              onChange={
-                value =>
-                  update(
-                    'autoPastDue',
-                    value
-                  )
-              }
-            />
-
-            <Toggle
-              label="Suspensión automática"
-              description="Por ahora recomendamos mantenerla apagada y suspender manualmente."
-              checked={
-                settings.autoSuspend
-              }
-              onChange={
-                value =>
-                  update(
-                    'autoSuspend',
-                    value
-                  )
-              }
-            />
-
-          </div>
-
-        </Section>
-
-
-        {/* SOPORTE */}
-
-        <Section
-          icon={
-            Headphones
-          }
-          title="Contacto y soporte"
-          subtitle="Datos para atender a tus clientes"
-        >
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-            <Input
-              label="Correo de soporte"
-              value={
-                settings.supportEmail
-              }
-              onChange={
-                value =>
-                  update(
-                    'supportEmail',
-                    value
-                  )
-              }
-            />
-
-            <Input
-              label="Teléfono"
-              value={
-                settings.supportPhone
-              }
-              onChange={
-                value =>
-                  update(
-                    'supportPhone',
-                    value
-                  )
-              }
-            />
-
-            <Input
-              label="WhatsApp"
-              value={
-                settings.whatsapp
-              }
-              onChange={
-                value =>
-                  update(
-                    'whatsapp',
-                    value
-                  )
-              }
-            />
-
-          </div>
-
-        </Section>
-
-
-        {/* MÉTODOS */}
-
-        <Section
-          icon={
-            CreditCard
-          }
-          title="Métodos de pago"
-          subtitle="Métodos aceptados para cobrar la renta de NEXGYM"
-        >
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-
-            <Toggle
-              label="Efectivo"
-              checked={
-                settings.paymentMethods
-                  ?.cash
-              }
-              onChange={
-                value =>
-                  updateNested(
-                    'paymentMethods',
-                    'cash',
-                    value
-                  )
-              }
-            />
-
-            <Toggle
-              label="Transferencia"
-              checked={
-                settings.paymentMethods
-                  ?.transfer
-              }
-              onChange={
-                value =>
-                  updateNested(
-                    'paymentMethods',
-                    'transfer',
-                    value
-                  )
-              }
-            />
-
-            <Toggle
-              label="Tarjeta"
-              checked={
-                settings.paymentMethods
-                  ?.card
-              }
-              onChange={
-                value =>
-                  updateNested(
-                    'paymentMethods',
-                    'card',
-                    value
-                  )
-              }
-            />
-
-          </div>
-
-        </Section>
-
-
-        {/* NOTIFICACIONES */}
-
-        <Section
-          icon={
-            Bell
-          }
-          title="Notificaciones"
-          subtitle="Eventos importantes que quieres vigilar"
-        >
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-
-            <Toggle
-              label="Pagos por vencer"
-              checked={
-                settings.notifications
-                  ?.paymentDue
-              }
-              onChange={
-                value =>
-                  updateNested(
-                    'notifications',
-                    'paymentDue',
-                    value
-                  )
-              }
-            />
-
-            <Toggle
-              label="Pruebas por terminar"
-              checked={
-                settings.notifications
-                  ?.trialEnding
-              }
-              onChange={
-                value =>
-                  updateNested(
-                    'notifications',
-                    'trialEnding',
-                    value
-                  )
-              }
-            />
-
-            <Toggle
-              label="Nuevos tickets"
-              checked={
-                settings.notifications
-                  ?.newTicket
-              }
-              onChange={
-                value =>
-                  updateNested(
-                    'notifications',
-                    'newTicket',
-                    value
-                  )
-              }
-            />
-
-            <Toggle
-              label="Clientes suspendidos"
-              checked={
-                settings.notifications
-                  ?.suspendedClient
-              }
-              onChange={
-                value =>
-                  updateNested(
-                    'notifications',
-                    'suspendedClient',
-                    value
-                  )
-              }
-            />
-
-          </div>
-
-        </Section>
-
-
-        {/* SEGURIDAD */}
-
-        <Section
-          icon={
-            ShieldCheck
-          }
-          title="Super Administrador"
-          subtitle={`Cuenta actual: ${admin?.email || '-'}`}
-        >
-
-          <div className="max-w-xl space-y-4">
-
-            <Input
-              label="Contraseña actual"
-              type="password"
-              value={
-                currentPassword
-              }
-              onChange={
-                setCurrentPassword
-              }
-            />
-
-            <Input
-              label="Nueva contraseña"
-              type="password"
-              value={
-                newPassword
-              }
-              onChange={
-                setNewPassword
-              }
-            />
-
-            <Input
-              label="Confirmar nueva contraseña"
-              type="password"
-              value={
-                confirmPassword
-              }
-              onChange={
-                setConfirmPassword
-              }
-            />
-
-
-            {
-              passwordError &&
-              (
-
-                <p className="text-red-400 text-xs">
-                  {passwordError}
-                </p>
-
-              )
-            }
-
-
-            {
-              passwordSuccess &&
-              (
-
-                <p className="text-[#00ff88] text-xs">
-                  {passwordSuccess}
-                </p>
-
-              )
-            }
-
-
-            <button
-              type="button"
-              onClick={
-                handlePassword
-              }
-              className="h-10 px-4 rounded-xl bg-[#171717] border border-[#282828] text-white text-sm flex items-center gap-2"
-            >
-
-              <KeyRound
-                className="w-4 h-4"
+              <CheckCircle2
+                className="w-5 h-5 text-[#00ff88]"
               />
 
-              Cambiar contraseña
 
-            </button>
+              <div>
+
+                <p className="text-white text-sm">
+                  Configuración guardada
+                </p>
+
+
+                <p className="text-gray-600 text-xs mt-0.5">
+                  Los cambios están sincronizados con Supabase.
+                </p>
+
+              </div>
+
+            </div>
+
+          )
+        }
+
+
+        {/* ================================================== */}
+        {/* CABECERA */}
+        {/* ================================================== */}
+
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
+
+          <div>
+
+            <div className="flex items-center gap-2">
+
+              <Cloud
+                className="w-4 h-4 text-[#00ff88]"
+              />
+
+
+              <p className="text-[#00ff88] text-xs font-medium uppercase tracking-wider">
+                Configuración en la nube
+              </p>
+
+            </div>
+
+
+            <p className="text-gray-500 text-sm mt-1">
+              Los cambios se guardan para toda la plataforma NEXGYM.
+            </p>
 
           </div>
 
-        </Section>
-
-
-        {/* BOTONES */}
-
-        <div className="flex flex-col sm:flex-row justify-between gap-3 pb-8">
 
           <button
             type="button"
             onClick={
-              handleReset
+              loadSettings
             }
-            className="h-11 px-5 rounded-xl border border-[#282828] text-gray-400 text-sm flex items-center justify-center gap-2"
+            className="h-10 px-4 rounded-xl bg-[#171717] border border-[#292929] text-gray-300 text-sm flex items-center justify-center gap-2 hover:text-white"
           >
 
-            <RotateCcw
+            <RefreshCcw
               className="w-4 h-4"
             />
 
-            Restaurar valores
-
-          </button>
-
-
-          <button
-            type="button"
-            onClick={
-              handleSave
-            }
-            className="h-11 px-6 rounded-xl bg-[#00ff88] text-black font-semibold text-sm flex items-center justify-center gap-2"
-          >
-
-            <Save
-              className="w-4 h-4"
-            />
-
-            Guardar configuración
+            Actualizar
 
           </button>
 
         </div>
 
+
+        {/* ================================================== */}
+        {/* ERROR */}
+        {/* ================================================== */}
+
+        {
+          settingsError &&
+          (
+
+            <div className="mb-5 bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-start gap-3">
+
+              <AlertCircle
+                className="w-5 h-5 text-red-400 shrink-0 mt-0.5"
+              />
+
+
+              <div>
+
+                <p className="text-red-400 text-sm font-medium">
+                  Error de configuración
+                </p>
+
+
+                <p className="text-red-400/70 text-xs mt-1">
+                  {settingsError}
+                </p>
+
+              </div>
+
+            </div>
+
+          )
+        }
+
+
+        <div className="space-y-5">
+
+          {/* ================================================== */}
+          {/* PLATAFORMA */}
+          {/* ================================================== */}
+
+          <Section
+            icon={
+              Settings
+            }
+            title="Plataforma"
+            subtitle="Información general de NEXGYM"
+          >
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+              <Input
+                label="Nombre de la plataforma"
+                value={
+                  settings.platformName
+                }
+                onChange={
+                  value =>
+                    update(
+                      'platformName',
+                      value
+                    )
+                }
+              />
+
+
+              <Input
+                label="Empresa"
+                value={
+                  settings.companyName
+                }
+                onChange={
+                  value =>
+                    update(
+                      'companyName',
+                      value
+                    )
+                }
+              />
+
+            </div>
+
+          </Section>
+
+
+          {/* ================================================== */}
+          {/* NEGOCIO */}
+          {/* ================================================== */}
+
+          <Section
+            icon={
+              DollarSign
+            }
+            title="Servicio y renta"
+            subtitle="Valores predeterminados para nuevos clientes"
+          >
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+
+              <Input
+                label="Precio mensual predeterminado"
+                type="number"
+                value={
+                  settings.defaultMonthlyPrice
+                }
+                onChange={
+                  value =>
+                    update(
+                      'defaultMonthlyPrice',
+                      value
+                    )
+                }
+              />
+
+
+              <Input
+                label="Moneda"
+                value={
+                  settings.currency
+                }
+                onChange={
+                  value =>
+                    update(
+                      'currency',
+                      value
+                    )
+                }
+              />
+
+
+              <Input
+                label="Días de gracia"
+                type="number"
+                value={
+                  settings.graceDays
+                }
+                onChange={
+                  value =>
+                    update(
+                      'graceDays',
+                      value
+                    )
+                }
+              />
+
+
+              <Input
+                label="Días de prueba predeterminados"
+                type="number"
+                value={
+                  settings.defaultTrialDays
+                }
+                onChange={
+                  value =>
+                    update(
+                      'defaultTrialDays',
+                      value
+                    )
+                }
+              />
+
+            </div>
+
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-5">
+
+              <Toggle
+                label="Marcar pago vencido automáticamente"
+                description="Cuando pase la fecha del próximo pago, NEXGYM podrá considerar al cliente con pago pendiente."
+                checked={
+                  settings.autoPastDue
+                }
+                onChange={
+                  value =>
+                    update(
+                      'autoPastDue',
+                      value
+                    )
+                }
+              />
+
+
+              <Toggle
+                label="Suspensión automática"
+                description="Permite definir si NEXGYM podrá suspender automáticamente clientes vencidos."
+                checked={
+                  settings.autoSuspend
+                }
+                onChange={
+                  value =>
+                    update(
+                      'autoSuspend',
+                      value
+                    )
+                }
+              />
+
+            </div>
+
+          </Section>
+
+
+          {/* ================================================== */}
+          {/* SOPORTE */}
+          {/* ================================================== */}
+
+          <Section
+            icon={
+              Headphones
+            }
+            title="Contacto y soporte"
+            subtitle="Datos para atender a tus clientes"
+          >
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+              <Input
+                label="Correo de soporte"
+                value={
+                  settings.supportEmail
+                }
+                onChange={
+                  value =>
+                    update(
+                      'supportEmail',
+                      value
+                    )
+                }
+              />
+
+
+              <Input
+                label="Teléfono"
+                value={
+                  settings.supportPhone
+                }
+                onChange={
+                  value =>
+                    update(
+                      'supportPhone',
+                      value
+                    )
+                }
+              />
+
+
+              <Input
+                label="WhatsApp"
+                value={
+                  settings.whatsapp
+                }
+                onChange={
+                  value =>
+                    update(
+                      'whatsapp',
+                      value
+                    )
+                }
+              />
+
+            </div>
+
+          </Section>
+
+
+          {/* ================================================== */}
+          {/* MÉTODOS */}
+          {/* ================================================== */}
+
+          <Section
+            icon={
+              CreditCard
+            }
+            title="Métodos de pago"
+            subtitle="Métodos aceptados para cobrar la renta de NEXGYM"
+          >
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+
+              <Toggle
+                label="Efectivo"
+                checked={
+                  settings.paymentMethods
+                    ?.cash
+                }
+                onChange={
+                  value =>
+                    updateNested(
+                      'paymentMethods',
+                      'cash',
+                      value
+                    )
+                }
+              />
+
+
+              <Toggle
+                label="Transferencia"
+                checked={
+                  settings.paymentMethods
+                    ?.transfer
+                }
+                onChange={
+                  value =>
+                    updateNested(
+                      'paymentMethods',
+                      'transfer',
+                      value
+                    )
+                }
+              />
+
+
+              <Toggle
+                label="Tarjeta"
+                checked={
+                  settings.paymentMethods
+                    ?.card
+                }
+                onChange={
+                  value =>
+                    updateNested(
+                      'paymentMethods',
+                      'card',
+                      value
+                    )
+                }
+              />
+
+            </div>
+
+          </Section>
+
+
+          {/* ================================================== */}
+          {/* NOTIFICACIONES */}
+          {/* ================================================== */}
+
+          <Section
+            icon={
+              Bell
+            }
+            title="Notificaciones"
+            subtitle="Eventos importantes que quieres vigilar"
+          >
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+
+              <Toggle
+                label="Pagos por vencer"
+                checked={
+                  settings.notifications
+                    ?.paymentDue
+                }
+                onChange={
+                  value =>
+                    updateNested(
+                      'notifications',
+                      'paymentDue',
+                      value
+                    )
+                }
+              />
+
+
+              <Toggle
+                label="Pruebas por terminar"
+                checked={
+                  settings.notifications
+                    ?.trialEnding
+                }
+                onChange={
+                  value =>
+                    updateNested(
+                      'notifications',
+                      'trialEnding',
+                      value
+                    )
+                }
+              />
+
+
+              <Toggle
+                label="Nuevos tickets"
+                checked={
+                  settings.notifications
+                    ?.newTicket
+                }
+                onChange={
+                  value =>
+                    updateNested(
+                      'notifications',
+                      'newTicket',
+                      value
+                    )
+                }
+              />
+
+
+              <Toggle
+                label="Clientes suspendidos"
+                checked={
+                  settings.notifications
+                    ?.suspendedClient
+                }
+                onChange={
+                  value =>
+                    updateNested(
+                      'notifications',
+                      'suspendedClient',
+                      value
+                    )
+                }
+              />
+
+            </div>
+
+          </Section>
+
+
+          {/* ================================================== */}
+          {/* SEGURIDAD */}
+          {/* ================================================== */}
+
+          <Section
+            icon={
+              ShieldCheck
+            }
+            title="Super Administrador"
+            subtitle={`Cuenta actual: ${admin?.email || '-'}`}
+          >
+
+            <div className="max-w-xl space-y-4">
+
+              <Input
+                label="Contraseña actual"
+                type="password"
+                value={
+                  currentPassword
+                }
+                onChange={
+                  setCurrentPassword
+                }
+              />
+
+
+              <Input
+                label="Nueva contraseña"
+                type="password"
+                value={
+                  newPassword
+                }
+                onChange={
+                  setNewPassword
+                }
+              />
+
+
+              <Input
+                label="Confirmar nueva contraseña"
+                type="password"
+                value={
+                  confirmPassword
+                }
+                onChange={
+                  setConfirmPassword
+                }
+              />
+
+
+              {
+                passwordError &&
+                (
+
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
+
+                    <p className="text-red-400 text-xs">
+                      {passwordError}
+                    </p>
+
+                  </div>
+
+                )
+              }
+
+
+              {
+                passwordSuccess &&
+                (
+
+                  <div className="bg-[#00ff88]/10 border border-[#00ff88]/20 rounded-xl px-4 py-3">
+
+                    <p className="text-[#00ff88] text-xs">
+                      {passwordSuccess}
+                    </p>
+
+                  </div>
+
+                )
+              }
+
+
+              <button
+                type="button"
+                onClick={
+                  handlePassword
+                }
+                disabled={
+                  changingPassword
+                }
+                className="h-10 px-4 rounded-xl bg-[#171717] border border-[#282828] text-white text-sm flex items-center gap-2 disabled:opacity-50"
+              >
+
+                {
+                  changingPassword
+                    ? (
+                      <LoaderCircle className="w-4 h-4 animate-spin" />
+                    )
+                    : (
+                      <KeyRound className="w-4 h-4" />
+                    )
+                }
+
+
+                {
+                  changingPassword
+                    ? 'Actualizando...'
+                    : 'Cambiar contraseña'
+                }
+
+              </button>
+
+            </div>
+
+          </Section>
+
+
+          {/* ================================================== */}
+          {/* BOTONES */}
+          {/* ================================================== */}
+
+          <div className="flex flex-col sm:flex-row justify-between gap-3 pb-8">
+
+            <button
+              type="button"
+              onClick={
+                handleReset
+              }
+              disabled={
+                resetting ||
+                saving
+              }
+              className="h-11 px-5 rounded-xl border border-[#282828] text-gray-400 text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+
+              {
+                resetting
+                  ? (
+                    <LoaderCircle className="w-4 h-4 animate-spin" />
+                  )
+                  : (
+                    <RotateCcw className="w-4 h-4" />
+                  )
+              }
+
+
+              {
+                resetting
+                  ? 'Restaurando...'
+                  : 'Restaurar valores'
+              }
+
+            </button>
+
+
+            <button
+              type="button"
+              onClick={
+                handleSave
+              }
+              disabled={
+                saving ||
+                resetting
+              }
+              className="h-11 px-6 rounded-xl bg-[#00ff88] text-black font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+
+              {
+                saving
+                  ? (
+                    <LoaderCircle className="w-4 h-4 animate-spin" />
+                  )
+                  : (
+                    <Save className="w-4 h-4" />
+                  )
+              }
+
+
+              {
+                saving
+                  ? 'Guardando...'
+                  : 'Guardar configuración'
+              }
+
+            </button>
+
+          </div>
+
+        </div>
+
       </div>
 
-    </div>
+    );
 
-  );
-
-};
+  };
 
 
 // ======================================================
-// COMPONENTES
+// SECTION
 // ======================================================
 
 const Section = ({
@@ -832,11 +1520,13 @@ const Section = ({
 
       </div>
 
+
       <div>
 
         <h3 className="text-white font-semibold">
           {title}
         </h3>
+
 
         <p className="text-gray-500 text-sm mt-1">
           {subtitle}
@@ -846,12 +1536,17 @@ const Section = ({
 
     </div>
 
+
     {children}
 
   </div>
 
 );
 
+
+// ======================================================
+// INPUT
+// ======================================================
 
 const Input = ({
   label,
@@ -866,18 +1561,26 @@ const Input = ({
       {label}
     </label>
 
+
     <input
       type={
         type
       }
       value={
-        value ?? ''
+        value ??
+        ''
       }
       onChange={
         event =>
           onChange(
             event.target.value
           )
+      }
+      min={
+        type ===
+        'number'
+          ? 0
+          : undefined
       }
       className="mt-2 w-full h-11 bg-[#0c0c0c] border border-[#282828] rounded-xl px-4 text-white text-sm outline-none focus:border-[#00ff88]/40"
     />
@@ -886,6 +1589,10 @@ const Input = ({
 
 );
 
+
+// ======================================================
+// TOGGLE
+// ======================================================
 
 const Toggle = ({
   label,
@@ -910,6 +1617,7 @@ const Toggle = ({
         {label}
       </p>
 
+
       {
         description &&
         (
@@ -929,6 +1637,7 @@ const Toggle = ({
         relative
         w-11
         h-6
+        shrink-0
         rounded-full
         transition-all
 

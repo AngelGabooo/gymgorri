@@ -1,6 +1,7 @@
 // src/nexgym/pages/NexgymSupportPage.jsx
 
 import React, {
+  useCallback,
   useEffect,
   useMemo,
   useState
@@ -12,16 +13,16 @@ import {
   Plus,
   X,
   Building2,
-  AlertTriangle,
-  Clock3,
   CheckCircle2,
-  MessageSquare,
-  Send
+  Send,
+  LoaderCircle,
+  RefreshCcw,
+  AlertCircle
 } from 'lucide-react';
 
 import {
-  getNexgymGyms
-} from '../services/nexgymGymService';
+  getNexgymCloudGyms
+} from '../services/nexgymCloudGymService.js';
 
 import {
   addNexgymTicketComment,
@@ -30,8 +31,12 @@ import {
   resolveNexgymSupportTicket,
   updateNexgymTicketPriority,
   updateNexgymTicketStatus
-} from '../services/nexgymSupportService';
+} from '../services/nexgymSupportService.js';
 
+
+// ======================================================
+// PAGE
+// ======================================================
 
 const NexgymSupportPage = () => {
 
@@ -71,54 +76,194 @@ const NexgymSupportPage = () => {
   ] = useState(false);
 
 
+  const [
+    loading,
+    setLoading
+  ] = useState(true);
+
+
+  const [
+    error,
+    setError
+  ] = useState('');
+
+
+  // ======================================================
+  // CARGAR
+  // ======================================================
+
   const loadData =
-    () => {
+    useCallback(
+      async () => {
 
-      setTickets(
-        getNexgymSupportTickets()
-      );
+        try {
 
-
-      setGyms(
-        getNexgymGyms()
-      );
+          setLoading(
+            true
+          );
 
 
-      if (
-        selectedTicket
-      ) {
+          setError(
+            ''
+          );
 
-        const updated =
-          getNexgymSupportTickets()
-            .find(
-              ticket =>
-                ticket.id ===
-                selectedTicket.id
+
+          const [
+            ticketsResult,
+            gymsResult
+          ] =
+            await Promise.all([
+
+              getNexgymSupportTickets(),
+
+              getNexgymCloudGyms()
+
+            ]);
+
+
+          if (
+            !ticketsResult.success
+          ) {
+
+            setTickets(
+              []
             );
 
 
-        if (updated) {
+            setError(
+              ticketsResult.message ||
+              'No se pudieron cargar los tickets.'
+            );
 
-          setSelectedTicket(
-            updated
+          } else {
+
+            setTickets(
+              ticketsResult.tickets ||
+              []
+            );
+
+          }
+
+
+          if (
+            gymsResult.success
+          ) {
+
+            setGyms(
+              gymsResult.gyms ||
+              []
+            );
+
+          }
+
+
+          if (
+            selectedTicket &&
+            ticketsResult.success
+          ) {
+
+            const updated =
+              (
+                ticketsResult.tickets ||
+                []
+              ).find(
+                ticket =>
+                  ticket.id ===
+                  selectedTicket.id
+              );
+
+
+            if (
+              updated
+            ) {
+
+              setSelectedTicket(
+                updated
+              );
+
+            } else {
+
+              setSelectedTicket(
+                null
+              );
+
+            }
+
+          }
+
+
+          console.log(
+            '☁️ Soporte NEXGYM cargado desde Supabase:',
+            {
+              tickets:
+                ticketsResult.tickets
+                  ?.length ||
+                0,
+
+              gyms:
+                gymsResult.gyms
+                  ?.length ||
+                0
+            }
+          );
+
+        } catch (
+          loadError
+        ) {
+
+          console.error(
+            '❌ Error cargando soporte:',
+            loadError
+          );
+
+
+          setError(
+            loadError?.message ||
+            'No se pudo cargar soporte.'
+          );
+
+        } finally {
+
+          setLoading(
+            false
           );
 
         }
 
-      }
+      },
+      [
+        selectedTicket?.id
+      ]
+    );
 
-    };
 
+  // ======================================================
+  // INIT
+  // ======================================================
 
   useEffect(
     () => {
 
-      loadData();
+      void loadData();
+
+
+      const refresh =
+        () => {
+
+          void loadData();
+
+        };
 
 
       window.addEventListener(
         'nexgym-support-update',
-        loadData
+        refresh
+      );
+
+
+      window.addEventListener(
+        'nexgym-gyms-update',
+        refresh
       );
 
 
@@ -126,16 +271,27 @@ const NexgymSupportPage = () => {
 
         window.removeEventListener(
           'nexgym-support-update',
-          loadData
+          refresh
+        );
+
+
+        window.removeEventListener(
+          'nexgym-gyms-update',
+          refresh
         );
 
       };
 
     },
-    // eslint-disable-next-line
-    []
+    [
+      loadData
+    ]
   );
 
+
+  // ======================================================
+  // FILTRAR
+  // ======================================================
 
   const filtered =
     useMemo(
@@ -152,17 +308,32 @@ const NexgymSupportPage = () => {
 
             const matchesSearch =
               !query ||
+
               ticket.gymName
                 ?.toLowerCase()
                 .includes(
                   query
                 ) ||
+
+              ticket.gymCode
+                ?.toLowerCase()
+                .includes(
+                  query
+                ) ||
+
               ticket.subject
                 ?.toLowerCase()
                 .includes(
                   query
                 ) ||
+
               ticket.ticketCode
+                ?.toLowerCase()
+                .includes(
+                  query
+                ) ||
+
+              ticket.description
                 ?.toLowerCase()
                 .includes(
                   query
@@ -171,7 +342,7 @@ const NexgymSupportPage = () => {
 
             const matchesStatus =
               status ===
-              'all'
+                'all'
                 ? true
                 : ticket.status ===
                   status;
@@ -194,9 +365,16 @@ const NexgymSupportPage = () => {
     );
 
 
+  // ======================================================
+  // STATS
+  // ======================================================
+
   const stats =
     useMemo(
       () => ({
+
+        total:
+          tickets.length,
 
         open:
           tickets.filter(
@@ -235,14 +413,29 @@ const NexgymSupportPage = () => {
     );
 
 
+  // ======================================================
+  // RENDER
+  // ======================================================
+
   return (
 
     <div className="p-8">
 
+      {/* ================================================== */}
+      {/* STATS / HEADER */}
+      {/* ================================================== */}
 
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-5">
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 flex-1">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 flex-1">
+
+          <Stat
+            label="Total"
+            value={
+              stats.total
+            }
+          />
+
 
           <Stat
             label="Abiertos"
@@ -251,6 +444,7 @@ const NexgymSupportPage = () => {
             }
           />
 
+
           <Stat
             label="En proceso"
             value={
@@ -258,12 +452,14 @@ const NexgymSupportPage = () => {
             }
           />
 
+
           <Stat
             label="Esperando"
             value={
               stats.waiting
             }
           />
+
 
           <Stat
             label="Resueltos"
@@ -275,26 +471,94 @@ const NexgymSupportPage = () => {
         </div>
 
 
-        <button
-          type="button"
-          onClick={() =>
-            setShowCreate(
-              true
-            )
-          }
-          className="h-11 px-5 rounded-xl bg-[#00ff88] text-black font-semibold text-sm flex items-center justify-center gap-2"
-        >
+        <div className="flex items-center gap-2">
 
-          <Plus
-            className="w-4 h-4"
-          />
+          <button
+            type="button"
+            onClick={
+              loadData
+            }
+            disabled={
+              loading
+            }
+            className="h-11 px-4 rounded-xl bg-[#171717] border border-[#292929] text-gray-300 text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+          >
 
-          Nuevo ticket
+            <RefreshCcw
+              className={`
+                w-4
+                h-4
+                ${
+                  loading
+                    ? 'animate-spin'
+                    : ''
+                }
+              `}
+            />
 
-        </button>
+            Actualizar
+
+          </button>
+
+
+          <button
+            type="button"
+            onClick={() =>
+              setShowCreate(
+                true
+              )
+            }
+            className="h-11 px-5 rounded-xl bg-[#00ff88] text-black font-semibold text-sm flex items-center justify-center gap-2"
+          >
+
+            <Plus
+              className="w-4 h-4"
+            />
+
+            Nuevo ticket
+
+          </button>
+
+        </div>
 
       </div>
 
+
+      {/* ================================================== */}
+      {/* ERROR */}
+      {/* ================================================== */}
+
+      {
+        error &&
+        (
+
+          <div className="mb-5 bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-start gap-3">
+
+            <AlertCircle
+              className="w-5 h-5 text-red-400 shrink-0"
+            />
+
+            <div>
+
+              <p className="text-red-400 text-sm font-medium">
+                Error de soporte
+              </p>
+
+              <p className="text-red-400/70 text-xs mt-1">
+                {error}
+              </p>
+
+            </div>
+
+          </div>
+
+        )
+      }
+
+
+      {/* ================================================== */}
+      {/* FILTROS */}
+      {/* ================================================== */}
 
       <div className="bg-[#111111] border border-[#202020] rounded-2xl p-4 mb-5">
 
@@ -316,8 +580,8 @@ const NexgymSupportPage = () => {
                     event.target.value
                   )
               }
-              placeholder="Buscar ticket, gimnasio o asunto..."
-              className="w-full h-11 bg-[#0c0c0c] border border-[#242424] rounded-xl pl-11 pr-4 text-white text-sm outline-none"
+              placeholder="Buscar ticket, gimnasio, código o asunto..."
+              className="w-full h-11 bg-[#0c0c0c] border border-[#242424] rounded-xl pl-11 pr-4 text-white text-sm outline-none focus:border-[#00ff88]/40"
             />
 
           </div>
@@ -333,7 +597,7 @@ const NexgymSupportPage = () => {
                   event.target.value
                 )
             }
-            className="h-11 bg-[#0c0c0c] border border-[#242424] rounded-xl px-4 text-gray-300 text-sm"
+            className="h-11 bg-[#0c0c0c] border border-[#242424] rounded-xl px-4 text-gray-300 text-sm outline-none"
           >
 
             <option value="all">
@@ -367,120 +631,158 @@ const NexgymSupportPage = () => {
       </div>
 
 
+      {/* ================================================== */}
+      {/* LISTADO */}
+      {/* ================================================== */}
+
       <div className="bg-[#111111] border border-[#202020] rounded-2xl overflow-hidden">
 
         {
-          filtered.length ===
-          0
+          loading
             ? (
 
-              <div className="py-20 text-center">
+              <div className="py-20 flex flex-col items-center justify-center">
 
-                <Headphones
-                  className="w-12 h-12 text-gray-800 mx-auto"
+                <LoaderCircle
+                  className="w-10 h-10 text-[#00ff88] animate-spin"
                 />
 
-                <p className="text-white mt-4">
-                  Sin tickets
-                </p>
-
-                <p className="text-gray-600 text-sm mt-1">
-                  No existen solicitudes de soporte.
+                <p className="text-gray-500 text-sm mt-4">
+                  Cargando tickets...
                 </p>
 
               </div>
 
             )
-            : (
+            : filtered.length ===
+              0
+              ? (
 
-              filtered.map(
-                ticket => (
+                <div className="py-20 text-center">
 
-                  <button
-                    type="button"
-                    key={
-                      ticket.id
-                    }
-                    onClick={() =>
-                      setSelectedTicket(
-                        ticket
-                      )
-                    }
-                    className="w-full text-left px-6 py-5 border-b border-[#1d1d1d] last:border-b-0 hover:bg-[#141414]"
-                  >
+                  <Headphones
+                    className="w-12 h-12 text-gray-800 mx-auto"
+                  />
 
-                    <div className="flex items-start justify-between gap-5">
+                  <p className="text-white mt-4">
+                    Sin tickets
+                  </p>
 
-                      <div className="flex items-start gap-4">
+                  <p className="text-gray-600 text-sm mt-1">
+                    No existen solicitudes de soporte.
+                  </p>
 
-                        <div className="w-11 h-11 rounded-xl bg-[#00ff88]/10 flex items-center justify-center">
+                </div>
 
-                          <Headphones
-                            className="w-5 h-5 text-[#00ff88]"
-                          />
+              )
+              : (
 
-                        </div>
+                filtered.map(
+                  ticket => (
 
+                    <button
+                      type="button"
+                      key={
+                        ticket.id
+                      }
+                      onClick={() =>
+                        setSelectedTicket(
+                          ticket
+                        )
+                      }
+                      className="w-full text-left px-6 py-5 border-b border-[#1d1d1d] last:border-b-0 hover:bg-[#141414]"
+                    >
 
-                        <div>
+                      <div className="flex items-start justify-between gap-5">
 
-                          <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-start gap-4 min-w-0">
 
-                            <p className="text-white text-sm font-medium">
-                              {ticket.subject}
-                            </p>
+                          <div className="w-11 h-11 rounded-xl bg-[#00ff88]/10 flex items-center justify-center shrink-0">
 
-                            <StatusBadge
-                              status={
-                                ticket.status
-                              }
-                            />
-
-                            <PriorityBadge
-                              priority={
-                                ticket.priority
-                              }
+                            <Headphones
+                              className="w-5 h-5 text-[#00ff88]"
                             />
 
                           </div>
 
 
-                          <p className="text-gray-600 text-xs mt-2">
-                            {ticket.ticketCode}
-                            {' · '}
-                            {ticket.gymName}
-                          </p>
+                          <div className="min-w-0">
+
+                            <div className="flex flex-wrap items-center gap-2">
+
+                              <p className="text-white text-sm font-medium">
+                                {ticket.subject}
+                              </p>
 
 
-                          <p className="text-gray-400 text-sm mt-3 line-clamp-2">
-                            {ticket.description}
-                          </p>
+                              <StatusBadge
+                                status={
+                                  ticket.status
+                                }
+                              />
+
+
+                              <PriorityBadge
+                                priority={
+                                  ticket.priority
+                                }
+                              />
+
+                            </div>
+
+
+                            <p className="text-gray-600 text-xs mt-2">
+
+                              {ticket.ticketCode}
+
+                              {' · '}
+
+                              {ticket.gymName}
+
+                              {
+                                ticket.gymCode
+                                  ? ` · ${ticket.gymCode}`
+                                  : ''
+                              }
+
+                            </p>
+
+
+                            <p className="text-gray-400 text-sm mt-3 line-clamp-2">
+                              {ticket.description}
+                            </p>
+
+                          </div>
 
                         </div>
 
+
+                        <p className="text-gray-700 text-xs whitespace-nowrap">
+
+                          {
+                            formatDate(
+                              ticket.createdAt
+                            )
+                          }
+
+                        </p>
+
                       </div>
 
+                    </button>
 
-                      <p className="text-gray-700 text-xs whitespace-nowrap">
-                        {
-                          formatDate(
-                            ticket.createdAt
-                          )
-                        }
-                      </p>
-
-                    </div>
-
-                  </button>
-
+                  )
                 )
-              )
 
-            )
+              )
         }
 
       </div>
 
+
+      {/* ================================================== */}
+      {/* CREAR */}
+      {/* ================================================== */}
 
       {
         showCreate &&
@@ -495,13 +797,13 @@ const NexgymSupportPage = () => {
                 false
               )
             }
-            onCreated={() => {
+            onCreated={async () => {
 
               setShowCreate(
                 false
               );
 
-              loadData();
+              await loadData();
 
             }}
           />
@@ -509,6 +811,10 @@ const NexgymSupportPage = () => {
         )
       }
 
+
+      {/* ================================================== */}
+      {/* DETALLE */}
+      {/* ================================================== */}
 
       {
         selectedTicket &&
@@ -539,7 +845,7 @@ const NexgymSupportPage = () => {
 
 
 // ======================================================
-// CREATE
+// CREATE MODAL
 // ======================================================
 
 const CreateTicketModal = ({
@@ -584,53 +890,97 @@ const CreateTicketModal = ({
   ] = useState('');
 
 
+  const [
+    saving,
+    setSaving
+  ] = useState(false);
+
+
   const createTicket =
-    () => {
-
-      const gym =
-        gyms.find(
-          item =>
-            item.id ===
-            gymId
-        );
-
-
-      const result =
-        createNexgymSupportTicket({
-
-          gymId,
-
-          gymCode:
-            gym?.gymCode,
-
-          gymName:
-            gym?.name,
-
-          subject,
-
-          description,
-
-          priority,
-
-          category
-
-        });
-
+    async () => {
 
       if (
-        !result.success
+        saving
       ) {
-
-        setError(
-          result.message
-        );
 
         return;
 
       }
 
 
-      onCreated();
+      try {
+
+        setSaving(
+          true
+        );
+
+        setError(
+          ''
+        );
+
+
+        const gym =
+          gyms.find(
+            item =>
+              item.id ===
+              gymId
+          );
+
+
+        const result =
+          await createNexgymSupportTicket({
+
+            gymId,
+
+            gymCode:
+              gym?.gymCode,
+
+            gymName:
+              gym?.name,
+
+            subject,
+
+            description,
+
+            priority,
+
+            category
+
+          });
+
+
+        if (
+          !result.success
+        ) {
+
+          setError(
+            result.message
+          );
+
+
+          return;
+
+        }
+
+
+        await onCreated();
+
+      } catch (
+        createError
+      ) {
+
+        setError(
+          createError?.message ||
+          'No se pudo crear el ticket.'
+        );
+
+      } finally {
+
+        setSaving(
+          false
+        );
+
+      }
 
     };
 
@@ -660,12 +1010,15 @@ const CreateTicketModal = ({
                   event.target.value
                 )
             }
-            className={inputClass}
+            className={
+              inputClass
+            }
           >
 
             <option value="">
               Selecciona un gimnasio
             </option>
+
 
             {
               gyms.map(
@@ -679,7 +1032,9 @@ const CreateTicketModal = ({
                       gym.id
                     }
                   >
+
                     {gym.name} - {gym.gymCode}
+
                   </option>
 
                 )
@@ -691,7 +1046,9 @@ const CreateTicketModal = ({
         </Field>
 
 
-        <Field label="Asunto">
+        <Field
+          label="Asunto"
+        >
 
           <input
             value={
@@ -711,9 +1068,11 @@ const CreateTicketModal = ({
         </Field>
 
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
-          <Field label="Categoría">
+          <Field
+            label="Categoría"
+          >
 
             <select
               value={
@@ -755,7 +1114,9 @@ const CreateTicketModal = ({
           </Field>
 
 
-          <Field label="Prioridad">
+          <Field
+            label="Prioridad"
+          >
 
             <select
               value={
@@ -795,7 +1156,9 @@ const CreateTicketModal = ({
         </div>
 
 
-        <Field label="Descripción">
+        <Field
+          label="Descripción"
+        >
 
           <textarea
             rows={5}
@@ -833,19 +1196,43 @@ const CreateTicketModal = ({
             onClick={
               onClose
             }
-            className="h-10 px-4 text-gray-400"
+            disabled={
+              saving
+            }
+            className="h-10 px-4 text-gray-400 disabled:opacity-50"
           >
+
             Cancelar
+
           </button>
+
 
           <button
             type="button"
             onClick={
               createTicket
             }
-            className="h-10 px-5 bg-[#00ff88] text-black rounded-xl font-semibold text-sm"
+            disabled={
+              saving
+            }
+            className="h-10 px-5 bg-[#00ff88] text-black rounded-xl font-semibold text-sm flex items-center gap-2 disabled:opacity-50"
           >
-            Crear ticket
+
+            {
+              saving &&
+              (
+                <LoaderCircle
+                  className="w-4 h-4 animate-spin"
+                />
+              )
+            }
+
+            {
+              saving
+                ? 'Creando...'
+                : 'Crear ticket'
+            }
+
           </button>
 
         </div>
@@ -860,7 +1247,7 @@ const CreateTicketModal = ({
 
 
 // ======================================================
-// TICKET
+// TICKET MODAL
 // ======================================================
 
 const TicketModal = ({
@@ -875,55 +1262,265 @@ const TicketModal = ({
   ] = useState('');
 
 
+  const [
+    error,
+    setError
+  ] = useState('');
+
+
+  const [
+    working,
+    setWorking
+  ] = useState(false);
+
+
+  // ====================================================
+  // STATUS
+  // ====================================================
+
   const changeStatus =
-    (
+    async (
       value
     ) => {
 
-      updateNexgymTicketStatus(
-        ticket.id,
-        value
-      );
+      if (
+        working
+      ) {
+
+        return;
+
+      }
 
 
-      onUpdate();
+      try {
 
-    };
+        setWorking(
+          true
+        );
 
-
-  const changePriority =
-    (
-      value
-    ) => {
-
-      updateNexgymTicketPriority(
-        ticket.id,
-        value
-      );
-
-
-      onUpdate();
-
-    };
-
-
-  const addComment =
-    () => {
-
-      const result =
-        addNexgymTicketComment(
-          ticket.id,
-          comment
+        setError(
+          ''
         );
 
 
+        const result =
+          await updateNexgymTicketStatus(
+            ticket.id,
+            value
+          );
+
+
+        if (
+          !result.success
+        ) {
+
+          setError(
+            result.message
+          );
+
+
+          return;
+
+        }
+
+
+        await onUpdate();
+
+      } finally {
+
+        setWorking(
+          false
+        );
+
+      }
+
+    };
+
+
+  // ====================================================
+  // PRIORIDAD
+  // ====================================================
+
+  const changePriority =
+    async (
+      value
+    ) => {
+
       if (
-        result.success
+        working
       ) {
 
-        setComment('');
+        return;
 
-        onUpdate();
+      }
+
+
+      try {
+
+        setWorking(
+          true
+        );
+
+        setError(
+          ''
+        );
+
+
+        const result =
+          await updateNexgymTicketPriority(
+            ticket.id,
+            value
+          );
+
+
+        if (
+          !result.success
+        ) {
+
+          setError(
+            result.message
+          );
+
+
+          return;
+
+        }
+
+
+        await onUpdate();
+
+      } finally {
+
+        setWorking(
+          false
+        );
+
+      }
+
+    };
+
+
+  // ====================================================
+  // COMMENT
+  // ====================================================
+
+  const addComment =
+    async () => {
+
+      if (
+        working
+      ) {
+
+        return;
+
+      }
+
+
+      try {
+
+        setWorking(
+          true
+        );
+
+        setError(
+          ''
+        );
+
+
+        const result =
+          await addNexgymTicketComment(
+            ticket.id,
+            comment
+          );
+
+
+        if (
+          !result.success
+        ) {
+
+          setError(
+            result.message
+          );
+
+
+          return;
+
+        }
+
+
+        setComment(
+          ''
+        );
+
+
+        await onUpdate();
+
+      } finally {
+
+        setWorking(
+          false
+        );
+
+      }
+
+    };
+
+
+  // ====================================================
+  // RESOLVE
+  // ====================================================
+
+  const resolveTicket =
+    async () => {
+
+      if (
+        working
+      ) {
+
+        return;
+
+      }
+
+
+      try {
+
+        setWorking(
+          true
+        );
+
+        setError(
+          ''
+        );
+
+
+        const result =
+          await resolveNexgymSupportTicket(
+            ticket.id,
+            'Caso resuelto desde NEXGYM.'
+          );
+
+
+        if (
+          !result.success
+        ) {
+
+          setError(
+            result.message
+          );
+
+
+          return;
+
+        }
+
+
+        await onUpdate();
+
+      } finally {
+
+        setWorking(
+          false
+        );
 
       }
 
@@ -942,6 +1539,10 @@ const TicketModal = ({
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
+        {/* ================================================== */}
+        {/* IZQUIERDA */}
+        {/* ================================================== */}
+
         <div className="lg:col-span-2">
 
           <div className="bg-[#0c0c0c] border border-[#222222] rounded-xl p-4">
@@ -949,6 +1550,7 @@ const TicketModal = ({
             <p className="text-gray-600 text-xs">
               Gimnasio
             </p>
+
 
             <p className="text-white mt-1 flex items-center gap-2">
 
@@ -961,16 +1563,63 @@ const TicketModal = ({
             </p>
 
 
+            {
+              ticket.gymCode &&
+              (
+
+                <p className="text-gray-600 text-xs mt-1">
+                  {ticket.gymCode}
+                </p>
+
+              )
+            }
+
+
             <p className="text-gray-600 text-xs mt-5">
               Descripción
             </p>
 
-            <p className="text-gray-300 text-sm mt-2 leading-relaxed">
+
+            <p className="text-gray-300 text-sm mt-2 leading-relaxed whitespace-pre-wrap">
               {ticket.description}
             </p>
 
+
+            <div className="grid grid-cols-2 gap-3 mt-5 pt-4 border-t border-[#222222]">
+
+              <div>
+
+                <p className="text-gray-600 text-xs">
+                  Categoría
+                </p>
+
+                <p className="text-gray-300 text-sm mt-1 capitalize">
+                  {getCategoryLabel(ticket.category)}
+                </p>
+
+              </div>
+
+
+              <div>
+
+                <p className="text-gray-600 text-xs">
+                  Creado por
+                </p>
+
+                <p className="text-gray-300 text-sm mt-1">
+                  {ticket.createdBy}
+                </p>
+
+              </div>
+
+            </div>
+
           </div>
 
+
+          {/* ================================================== */}
+          {/* COMENTARIOS */}
+          {/* ================================================== */}
 
           <div className="mt-4">
 
@@ -980,7 +1629,8 @@ const TicketModal = ({
 
 
             {
-              !ticket.comments?.length
+              !ticket.comments
+                ?.length
                 ? (
 
                   <p className="text-gray-700 text-sm py-5">
@@ -1000,23 +1650,27 @@ const TicketModal = ({
                         className="bg-[#0c0c0c] border border-[#222222] rounded-xl p-4 mb-2"
                       >
 
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-4">
 
                           <p className="text-white text-xs font-medium">
                             {item.author}
                           </p>
 
+
                           <p className="text-gray-700 text-xs">
+
                             {
                               formatDate(
                                 item.createdAt
                               )
                             }
+
                           </p>
 
                         </div>
 
-                        <p className="text-gray-400 text-sm mt-2">
+
+                        <p className="text-gray-400 text-sm mt-2 whitespace-pre-wrap">
                           {item.content}
                         </p>
 
@@ -1041,36 +1695,88 @@ const TicketModal = ({
                       event.target.value
                     )
                 }
+                onKeyDown={
+                  event => {
+
+                    if (
+                      event.key ===
+                      'Enter'
+                    ) {
+
+                      event.preventDefault();
+
+                      void addComment();
+
+                    }
+
+                  }
+                }
                 placeholder="Agregar comentario..."
-                className={`${inputClass} flex-1`}
+                disabled={
+                  working
+                }
+                className={`${inputClass} flex-1 disabled:opacity-50`}
               />
+
 
               <button
                 type="button"
                 onClick={
                   addComment
                 }
-                className="w-11 h-11 rounded-xl bg-[#00ff88] text-black flex items-center justify-center"
+                disabled={
+                  working ||
+                  !comment.trim()
+                }
+                className="w-11 h-11 rounded-xl bg-[#00ff88] text-black flex items-center justify-center disabled:opacity-50"
               >
 
-                <Send
-                  className="w-4 h-4"
-                />
+                {
+                  working
+                    ? (
+                      <LoaderCircle
+                        className="w-4 h-4 animate-spin"
+                      />
+                    )
+                    : (
+                      <Send
+                        className="w-4 h-4"
+                      />
+                    )
+                }
 
               </button>
 
             </div>
+
+
+            {
+              error &&
+              (
+
+                <p className="text-red-400 text-xs mt-3">
+                  {error}
+                </p>
+
+              )
+            }
 
           </div>
 
         </div>
 
 
+        {/* ================================================== */}
+        {/* DERECHA */}
+        {/* ================================================== */}
+
         <div>
 
           <div className="bg-[#0c0c0c] border border-[#222222] rounded-xl p-4">
 
-            <Field label="Estado">
+            <Field
+              label="Estado"
+            >
 
               <select
                 value={
@@ -1082,9 +1788,10 @@ const TicketModal = ({
                       event.target.value
                     )
                 }
-                className={
-                  inputClass
+                disabled={
+                  working
                 }
+                className={`${inputClass} disabled:opacity-50`}
               >
 
                 <option value="open">
@@ -1114,7 +1821,9 @@ const TicketModal = ({
 
             <div className="mt-4">
 
-              <Field label="Prioridad">
+              <Field
+                label="Prioridad"
+              >
 
                 <select
                   value={
@@ -1126,9 +1835,10 @@ const TicketModal = ({
                         event.target.value
                       )
                   }
-                  className={
-                    inputClass
+                  disabled={
+                    working
                   }
+                  className={`${inputClass} disabled:opacity-50`}
                 >
 
                   <option value="low">
@@ -1161,11 +1871,28 @@ const TicketModal = ({
               </p>
 
               <p className="text-gray-300 text-xs mt-1">
+
                 {
                   formatDate(
                     ticket.createdAt
                   )
                 }
+
+              </p>
+
+
+              <p className="text-gray-600 text-xs mt-4">
+                Última actualización
+              </p>
+
+              <p className="text-gray-300 text-xs mt-1">
+
+                {
+                  formatDate(
+                    ticket.updatedAt
+                  )
+                }
+
               </p>
 
 
@@ -1176,6 +1903,30 @@ const TicketModal = ({
               <p className="text-gray-300 text-xs mt-1">
                 {ticket.assignedTo}
               </p>
+
+
+              {
+                ticket.resolvedAt &&
+                (
+
+                  <>
+                    <p className="text-gray-600 text-xs mt-4">
+                      Resuelto
+                    </p>
+
+                    <p className="text-[#00ff88] text-xs mt-1">
+
+                      {
+                        formatDate(
+                          ticket.resolvedAt
+                        )
+                      }
+
+                    </p>
+                  </>
+
+                )
+              }
 
             </div>
 
@@ -1189,17 +1940,13 @@ const TicketModal = ({
 
                 <button
                   type="button"
-                  onClick={() => {
-
-                    resolveNexgymSupportTicket(
-                      ticket.id,
-                      'Caso resuelto desde NEXGYM.'
-                    );
-
-                    onUpdate();
-
-                  }}
-                  className="mt-5 w-full h-10 rounded-xl bg-[#00ff88]/10 border border-[#00ff88]/20 text-[#00ff88] text-sm font-medium"
+                  onClick={
+                    resolveTicket
+                  }
+                  disabled={
+                    working
+                  }
+                  className="mt-5 w-full h-10 rounded-xl bg-[#00ff88]/10 border border-[#00ff88]/20 text-[#00ff88] text-sm font-medium disabled:opacity-50"
                 >
 
                   <CheckCircle2
@@ -1234,6 +1981,10 @@ const inputClass =
   'w-full h-11 bg-[#0c0c0c] border border-[#282828] rounded-xl px-4 text-white text-sm outline-none focus:border-[#00ff88]/40';
 
 
+// ======================================================
+// FIELD
+// ======================================================
+
 const Field = ({
   label,
   children
@@ -1254,6 +2005,10 @@ const Field = ({
 );
 
 
+// ======================================================
+// MODAL
+// ======================================================
+
 const Modal = ({
   title,
   onClose,
@@ -1263,33 +2018,56 @@ const Modal = ({
 
   <div className="fixed inset-0 z-[200] bg-black/75 backdrop-blur-sm flex items-center justify-center p-5">
 
+    <button
+      type="button"
+      onClick={
+        onClose
+      }
+      className="absolute inset-0 cursor-default"
+      aria-label="Cerrar"
+    />
+
+
     <div
       className={`
+        relative
         w-full
-        ${large
-          ? 'max-w-5xl'
-          : 'max-w-xl'}
+        ${
+          large
+            ? 'max-w-5xl'
+            : 'max-w-xl'
+        }
+        max-h-[92vh]
+        overflow-y-auto
         bg-[#111111]
         border
-        border-[#292929]
+        border-[#242424]
         rounded-2xl
-        max-h-[90vh]
-        overflow-y-auto
+        shadow-2xl
       `}
     >
 
-      <div className="sticky top-0 bg-[#111111] p-5 border-b border-[#202020] flex items-center justify-between z-10">
+      <div className="sticky top-0 z-10 bg-[#111111] px-6 py-5 border-b border-[#202020] flex items-center justify-between gap-4">
 
-        <h3 className="text-white font-semibold">
-          {title}
-        </h3>
+        <div>
+
+          <p className="text-[#00ff88] text-[10px] uppercase tracking-wider">
+            NEXGYM Soporte
+          </p>
+
+          <h2 className="text-white font-semibold mt-1">
+            {title}
+          </h2>
+
+        </div>
+
 
         <button
           type="button"
           onClick={
             onClose
           }
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:text-white hover:bg-[#1c1c1c]"
+          className="w-9 h-9 rounded-lg bg-[#181818] border border-[#292929] text-gray-400 flex items-center justify-center hover:text-white"
         >
 
           <X
@@ -1300,7 +2078,8 @@ const Modal = ({
 
       </div>
 
-      <div className="p-5">
+
+      <div className="p-6">
         {children}
       </div>
 
@@ -1311,18 +2090,22 @@ const Modal = ({
 );
 
 
+// ======================================================
+// STAT
+// ======================================================
+
 const Stat = ({
   label,
   value
 }) => (
 
-  <div className="bg-[#111111] border border-[#202020] rounded-xl p-4">
+  <div className="bg-[#111111] border border-[#202020] rounded-xl px-4 py-3">
 
     <p className="text-gray-600 text-xs">
       {label}
     </p>
 
-    <p className="text-white text-2xl font-semibold mt-1">
+    <p className="text-white text-xl font-semibold mt-1">
       {value}
     </p>
 
@@ -1331,41 +2114,40 @@ const Stat = ({
 );
 
 
+// ======================================================
+// STATUS BADGE
+// ======================================================
+
 const StatusBadge = ({
   status
 }) => {
 
   const map = {
 
-    open:
-      [
-        'Abierto',
-        'text-blue-400 bg-blue-500/10 border-blue-500/20'
-      ],
+    open: [
+      'Abierto',
+      'text-blue-400 bg-blue-500/10 border-blue-500/20'
+    ],
 
-    in_progress:
-      [
-        'En proceso',
-        'text-yellow-400 bg-yellow-500/10 border-yellow-500/20'
-      ],
+    in_progress: [
+      'En proceso',
+      'text-yellow-400 bg-yellow-500/10 border-yellow-500/20'
+    ],
 
-    waiting:
-      [
-        'Esperando',
-        'text-orange-400 bg-orange-500/10 border-orange-500/20'
-      ],
+    waiting: [
+      'Esperando',
+      'text-orange-400 bg-orange-500/10 border-orange-500/20'
+    ],
 
-    resolved:
-      [
-        'Resuelto',
-        'text-[#00ff88] bg-[#00ff88]/10 border-[#00ff88]/20'
-      ],
+    resolved: [
+      'Resuelto',
+      'text-[#00ff88] bg-[#00ff88]/10 border-[#00ff88]/20'
+    ],
 
-    closed:
-      [
-        'Cerrado',
-        'text-gray-400 bg-gray-500/10 border-gray-500/20'
-      ]
+    closed: [
+      'Cerrado',
+      'text-gray-400 bg-gray-500/10 border-gray-500/20'
+    ]
 
   };
 
@@ -1379,7 +2161,9 @@ const StatusBadge = ({
 
   return (
 
-    <span className={`border rounded-full px-2 py-0.5 text-[10px] ${data[1]}`}>
+    <span
+      className={`border rounded-full px-2 py-0.5 text-[10px] ${data[1]}`}
+    >
       {data[0]}
     </span>
 
@@ -1388,35 +2172,35 @@ const StatusBadge = ({
 };
 
 
+// ======================================================
+// PRIORIDAD
+// ======================================================
+
 const PriorityBadge = ({
   priority
 }) => {
 
   const map = {
 
-    low:
-      [
-        'Baja',
-        'text-gray-400'
-      ],
+    low: [
+      'Baja',
+      'text-gray-400'
+    ],
 
-    medium:
-      [
-        'Media',
-        'text-blue-400'
-      ],
+    medium: [
+      'Media',
+      'text-blue-400'
+    ],
 
-    high:
-      [
-        'Alta',
-        'text-yellow-400'
-      ],
+    high: [
+      'Alta',
+      'text-yellow-400'
+    ],
 
-    urgent:
-      [
-        'Urgente',
-        'text-red-400'
-      ]
+    urgent: [
+      'Urgente',
+      'text-red-400'
+    ]
 
   };
 
@@ -1430,7 +2214,9 @@ const PriorityBadge = ({
 
   return (
 
-    <span className={`text-[10px] font-medium ${data[1]}`}>
+    <span
+      className={`text-[10px] font-medium ${data[1]}`}
+    >
       {data[0]}
     </span>
 
@@ -1439,36 +2225,93 @@ const PriorityBadge = ({
 };
 
 
+// ======================================================
+// CATEGORÍA
+// ======================================================
+
+const getCategoryLabel = (
+  category
+) => {
+
+  const labels = {
+
+    general:
+      'General',
+
+    access:
+      'Acceso',
+
+    billing:
+      'Facturación',
+
+    members:
+      'Miembros',
+
+    technical:
+      'Técnico'
+
+  };
+
+
+  return (
+    labels[
+      category
+    ] ||
+    category ||
+    'General'
+  );
+
+};
+
+
+// ======================================================
+// FECHA
+// ======================================================
+
 const formatDate = (
   value
 ) => {
 
-  if (!value) {
+  if (
+    !value
+  ) {
 
     return '-';
 
   }
 
 
-  return new Intl.DateTimeFormat(
-    'es-MX',
-    {
-      day:
-        '2-digit',
-      month:
-        'short',
-      year:
-        'numeric',
-      hour:
-        '2-digit',
-      minute:
-        '2-digit'
-    }
-  ).format(
-    new Date(
-      value
-    )
-  );
+  try {
+
+    return new Intl.DateTimeFormat(
+      'es-MX',
+      {
+        day:
+          '2-digit',
+
+        month:
+          'short',
+
+        year:
+          'numeric',
+
+        hour:
+          '2-digit',
+
+        minute:
+          '2-digit'
+      }
+    ).format(
+      new Date(
+        value
+      )
+    );
+
+  } catch {
+
+    return '-';
+
+  }
 
 };
 
