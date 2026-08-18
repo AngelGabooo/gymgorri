@@ -10,6 +10,10 @@ import {
   hashValue
 } from '../utils/memberId';
 
+import {
+  supabase
+} from '../lib/supabaseClient.js';
+
 
 // ======================================================
 // STORAGE
@@ -501,6 +505,867 @@ const normalizeUserGymData = (
 };
 
 
+
+// ======================================================
+// NORMALIZAR ROL DE SUPABASE
+// ======================================================
+
+const normalizeCloudRole = (
+  role
+) => {
+
+  if (
+    role === 'employee'
+  ) {
+
+    return 'reception';
+
+  }
+
+
+  if (
+    role === 'owner' ||
+    role === 'admin' ||
+    role === 'reception'
+  ) {
+
+    return role;
+
+  }
+
+
+  return 'reception';
+
+};
+
+
+// ======================================================
+// GUARDAR / ACTUALIZAR USUARIO CLOUD EN CACHE LOCAL
+// ======================================================
+//
+// El resto de GYM CONTROL todavía utiliza getGymUsers()
+// de manera síncrona.
+//
+// Por eso conservamos una copia local del usuario de
+// Supabase. Supabase sigue siendo la fuente de verdad
+// para autenticación y vínculo con el gimnasio.
+//
+// ======================================================
+
+const cacheCloudGymUser = (
+  cloudUser
+) => {
+
+  const users =
+    getGymUsers();
+
+
+  const list =
+    Array.isArray(
+      users
+    )
+      ? users
+      : [];
+
+
+  const index =
+    list.findIndex(
+      user =>
+        user.id === cloudUser.id ||
+        (
+          cloudUser.authUserId &&
+          user.authUserId ===
+            cloudUser.authUserId
+        ) ||
+        String(
+          user.email ||
+          ''
+        )
+          .trim()
+          .toLowerCase() ===
+        String(
+          cloudUser.email ||
+          ''
+        )
+          .trim()
+          .toLowerCase()
+    );
+
+
+  let nextUsers;
+
+
+  if (
+    index ===
+    -1
+  ) {
+
+    nextUsers = [
+      ...list,
+      cloudUser
+    ];
+
+  } else {
+
+    nextUsers =
+      list.map(
+        (
+          user,
+          userIndex
+        ) =>
+          userIndex ===
+          index
+            ? {
+                ...user,
+                ...cloudUser
+              }
+            : user
+      );
+
+  }
+
+
+  saveGymUsers(
+    nextUsers
+  );
+
+
+  return cloudUser;
+
+};
+
+
+// ======================================================
+// AUTENTICAR USUARIO CLOUD DE GIMNASIO
+// ======================================================
+
+const authenticateCloudGymUser =
+  async (
+    normalizedEmail,
+    normalizedPassword
+  ) => {
+
+    // ==================================================
+    // 1. SUPABASE AUTH
+    // ==================================================
+
+    const {
+      data:
+        authData,
+
+      error:
+        authError
+    } =
+      await supabase.auth
+        .signInWithPassword({
+
+          email:
+            normalizedEmail,
+
+          password:
+            normalizedPassword
+
+        });
+
+
+    if (
+      authError
+    ) {
+
+      return {
+
+        success:
+          false,
+
+        cloudAttempted:
+          true,
+
+        code:
+          authError.status === 400
+            ? 'INVALID_CREDENTIALS'
+            : 'SUPABASE_AUTH_ERROR',
+
+        message:
+          authError.status === 400
+            ? 'El correo o la contraseña son incorrectos.'
+            : (
+                authError.message ||
+                'No se pudo iniciar sesión con Supabase.'
+              ),
+
+        authError
+
+      };
+
+    }
+
+
+    const authUser =
+      authData?.user ||
+      null;
+
+
+    if (
+      !authUser?.id
+    ) {
+
+      await supabase.auth
+        .signOut();
+
+      return {
+
+        success:
+          false,
+
+        cloudAttempted:
+          true,
+
+        code:
+          'AUTH_USER_NOT_FOUND',
+
+        message:
+          'Supabase no devolvió el usuario autenticado.'
+
+      };
+
+    }
+
+
+    // ==================================================
+    // 2. VÍNCULO GYM_USERS
+    // ==================================================
+
+    const {
+      data:
+        gymUser,
+
+      error:
+        gymUserError
+    } =
+      await supabase
+
+        .from(
+          'gym_users'
+        )
+
+        .select(
+          `
+            id,
+            user_id,
+            gym_id,
+            name,
+            email,
+            role,
+            status,
+            permissions,
+            must_change_password,
+            last_access_at,
+            created_at,
+            updated_at
+          `
+        )
+
+        .eq(
+          'user_id',
+          authUser.id
+        )
+
+        .maybeSingle();
+
+
+    if (
+      gymUserError
+    ) {
+
+      console.error(
+        '❌ Error consultando gym_users:',
+        gymUserError
+      );
+
+
+      await supabase.auth
+        .signOut();
+
+
+      return {
+
+        success:
+          false,
+
+        cloudAttempted:
+          true,
+
+        code:
+          'GYM_USER_QUERY_ERROR',
+
+        message:
+          'No se pudo comprobar la autorización de esta cuenta.'
+
+      };
+
+    }
+
+
+    if (
+      !gymUser?.id ||
+      !gymUser?.gym_id
+    ) {
+
+      await supabase.auth
+        .signOut();
+
+
+      return {
+
+        success:
+          false,
+
+        cloudAttempted:
+          true,
+
+        code:
+          'GYM_USER_NOT_LINKED',
+
+        message:
+          'Este correo no está vinculado a ningún gimnasio.'
+
+      };
+
+    }
+
+
+    // ==================================================
+    // 3. ESTADO DEL USUARIO
+    // ==================================================
+
+    if (
+      gymUser.status !==
+      'active'
+    ) {
+
+      await supabase.auth
+        .signOut();
+
+
+      return {
+
+        success:
+          false,
+
+        cloudAttempted:
+          true,
+
+        code:
+          'USER_INACTIVE',
+
+        message:
+          gymUser.status ===
+          'suspended'
+            ? 'Este usuario se encuentra suspendido.'
+            : 'Este usuario está desactivado.'
+
+      };
+
+    }
+
+
+    // ==================================================
+    // 4. GIMNASIO
+    // ==================================================
+
+    const {
+      data:
+        gym,
+
+      error:
+        gymError
+    } =
+      await supabase
+
+        .from(
+          'gyms'
+        )
+
+        .select(
+          `
+            id,
+            gym_code,
+            name,
+            status,
+            subscription_status,
+            subscription_next_payment_date,
+            trial_active,
+            trial_start_date,
+            trial_end_date,
+            created_at,
+            updated_at
+          `
+        )
+
+        .eq(
+          'id',
+          gymUser.gym_id
+        )
+
+        .maybeSingle();
+
+
+    if (
+      gymError
+    ) {
+
+      console.error(
+        '❌ Error consultando gimnasio:',
+        gymError
+      );
+
+
+      await supabase.auth
+        .signOut();
+
+
+      return {
+
+        success:
+          false,
+
+        cloudAttempted:
+          true,
+
+        code:
+          'GYM_QUERY_ERROR',
+
+        message:
+          'No se pudo comprobar el estado del gimnasio.'
+
+      };
+
+    }
+
+
+    if (
+      !gym?.id
+    ) {
+
+      await supabase.auth
+        .signOut();
+
+
+      return {
+
+        success:
+          false,
+
+        cloudAttempted:
+          true,
+
+        code:
+          'GYM_NOT_FOUND',
+
+        message:
+          'El gimnasio asociado a esta cuenta no existe.'
+
+      };
+
+    }
+
+
+    // ==================================================
+    // 5. SUSCRIPCIÓN
+    // ==================================================
+
+    const {
+      data:
+        subscription,
+
+      error:
+        subscriptionError
+    } =
+      await supabase
+
+        .from(
+          'gym_subscriptions'
+        )
+
+        .select(
+          `
+            id,
+            gym_id,
+            status,
+            billing_cycle,
+            regular_price,
+            discount,
+            final_price,
+            start_date,
+            next_payment_date,
+            trial_start_date,
+            trial_end_date,
+            created_at,
+            updated_at
+          `
+        )
+
+        .eq(
+          'gym_id',
+          gym.id
+        )
+
+        .order(
+          'created_at',
+          {
+            ascending:
+              false
+          }
+        )
+
+        .limit(
+          1
+        )
+
+        .maybeSingle();
+
+
+    if (
+      subscriptionError
+    ) {
+
+      console.warn(
+        '⚠️ No se pudo consultar gym_subscriptions:',
+        subscriptionError
+      );
+
+    }
+
+
+    const gymStatus =
+      subscription?.status ||
+      gym.subscription_status ||
+      gym.status ||
+      'active';
+
+
+    // ==================================================
+    // 6. BLOQUEOS
+    // ==================================================
+
+    if (
+      gym.status ===
+        'inactive'
+    ) {
+
+      await supabase.auth
+        .signOut();
+
+
+      return {
+
+        success:
+          false,
+
+        cloudAttempted:
+          true,
+
+        code:
+          'GYM_INACTIVE',
+
+        message:
+          'El servicio NEXGYM de este gimnasio está desactivado.'
+
+      };
+
+    }
+
+
+    if (
+      gym.status ===
+        'suspended' ||
+      gymStatus ===
+        'suspended'
+    ) {
+
+      await supabase.auth
+        .signOut();
+
+
+      return {
+
+        success:
+          false,
+
+        cloudAttempted:
+          true,
+
+        code:
+          'GYM_SUSPENDED',
+
+        message:
+          'El servicio NEXGYM de este gimnasio se encuentra suspendido.'
+
+      };
+
+    }
+
+
+    // ==================================================
+    // 7. ROL Y PERMISOS
+    // ==================================================
+
+    const role =
+      normalizeCloudRole(
+        gymUser.role
+      );
+
+
+    const permissions =
+      normalizePermissions(
+        role,
+        gymUser.permissions
+      );
+
+
+    const now =
+      new Date()
+        .toISOString();
+
+
+    // ==================================================
+    // 8. USUARIO COMPATIBLE CON GYM CONTROL
+    // ==================================================
+
+    const cachedUser = {
+
+      id:
+        gymUser.id,
+
+      authUserId:
+        authUser.id,
+
+      source:
+        'supabase',
+
+      isCloudUser:
+        true,
+
+      gymId:
+        gym.id,
+
+      gymCode:
+        gym.gym_code ||
+        null,
+
+      gymName:
+        gym.name ||
+        null,
+
+      gymStatus,
+
+      name:
+        gymUser.name ||
+        authUser.user_metadata
+          ?.name ||
+        normalizedEmail,
+
+      email:
+        gymUser.email ||
+        authUser.email ||
+        normalizedEmail,
+
+      passwordHash:
+        null,
+
+      role,
+
+      permissions,
+
+      status:
+        gymUser.status,
+
+      mustChangePassword:
+        Boolean(
+          gymUser.must_change_password
+        ),
+
+      createdAt:
+        gymUser.created_at ||
+        now,
+
+      updatedAt:
+        now,
+
+      lastAccessAt:
+        now,
+
+      passwordUpdatedAt:
+        null
+
+    };
+
+
+    cacheCloudGymUser(
+      cachedUser
+    );
+
+
+    // ==================================================
+    // 9. SESIÓN LOCAL DE LA APP
+    // ==================================================
+
+    const session = {
+
+      id:
+        cachedUser.id,
+
+      authUserId:
+        authUser.id,
+
+      source:
+        'supabase',
+
+      isCloudUser:
+        true,
+
+      gymId:
+        cachedUser.gymId,
+
+      gymCode:
+        cachedUser.gymCode,
+
+      gymName:
+        cachedUser.gymName,
+
+      name:
+        cachedUser.name,
+
+      email:
+        cachedUser.email,
+
+      role,
+
+      permissions,
+
+      gymStatus,
+
+      mustChangePassword:
+        cachedUser.mustChangePassword,
+
+      loginAt:
+        now
+
+    };
+
+
+    localStorage.setItem(
+      AUTH_KEY,
+      'true'
+    );
+
+
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify(
+        session
+      )
+    );
+
+
+    // ==================================================
+    // 10. LAST ACCESS EN SUPABASE
+    // ==================================================
+
+    const {
+      error:
+        lastAccessError
+    } =
+      await supabase
+
+        .from(
+          'gym_users'
+        )
+
+        .update({
+
+          last_access_at:
+            now
+
+        })
+
+        .eq(
+          'id',
+          gymUser.id
+        );
+
+
+    if (
+      lastAccessError
+    ) {
+
+      console.warn(
+        '⚠️ No se pudo actualizar last_access_at:',
+        lastAccessError
+      );
+
+    }
+
+
+    // Cache local anterior.
+    updateNexgymLastConnection(
+      gym.id,
+      now
+    );
+
+
+    window.dispatchEvent(
+      new Event(
+        'gym-auth-update'
+      )
+    );
+
+
+    window.dispatchEvent(
+      new Event(
+        'gym-storage-update'
+      )
+    );
+
+
+    console.log(
+      '✅ Usuario de gimnasio autenticado con Supabase:',
+      {
+        userId:
+          authUser.id,
+
+        gymUserId:
+          gymUser.id,
+
+        gymId:
+          gym.id,
+
+        gymCode:
+          gym.gym_code,
+
+        role
+      }
+    );
+
+
+    return {
+
+      success:
+        true,
+
+      cloudAttempted:
+        true,
+
+      user:
+        cachedUser,
+
+      session
+
+    };
+
+  };
+
+
 // ======================================================
 // ASEGURAR USUARIO PRINCIPAL
 // ======================================================
@@ -716,7 +1581,8 @@ export const authenticateGymUser =
 
       const normalizedEmail =
         String(
-          email || ''
+          email ||
+          ''
         )
           .trim()
           .toLowerCase();
@@ -724,7 +1590,8 @@ export const authenticateGymUser =
 
       const normalizedPassword =
         String(
-          password || ''
+          password ||
+          ''
         );
 
 
@@ -735,7 +1602,8 @@ export const authenticateGymUser =
 
         return {
 
-          success: false,
+          success:
+            false,
 
           code:
             'EMPTY_FIELDS',
@@ -748,6 +1616,47 @@ export const authenticateGymUser =
       }
 
 
+      // ==================================================
+      // 1. INTENTAR SUPABASE PRIMERO
+      // ==================================================
+      //
+      // Las cuentas creadas desde NEXGYM viven en:
+      //
+      // auth.users
+      // gym_users
+      //
+      // Por eso Supabase debe ser la primera fuente.
+      //
+      // ==================================================
+
+      const cloudResult =
+        await authenticateCloudGymUser(
+          normalizedEmail,
+          normalizedPassword
+        );
+
+
+      if (
+        cloudResult.success
+      ) {
+
+        return cloudResult;
+
+      }
+
+
+      // ==================================================
+      // 2. COMPATIBILIDAD LEGACY
+      // ==================================================
+      //
+      // Solo intentamos el sistema local si realmente
+      // existe ese correo en getGymUsers().
+      //
+      // Esto conserva instalaciones anteriores sin impedir
+      // el acceso a las cuentas nuevas de Supabase.
+      //
+      // ==================================================
+
       const users =
         getGymUsers();
 
@@ -756,11 +1665,15 @@ export const authenticateGymUser =
         users.findIndex(
           item =>
             String(
-              item.email || ''
+              item.email ||
+              ''
             )
               .trim()
               .toLowerCase() ===
-            normalizedEmail
+            normalizedEmail &&
+            !item.isCloudUser &&
+            item.source !==
+              'supabase'
         );
 
 
@@ -771,12 +1684,15 @@ export const authenticateGymUser =
 
         return {
 
-          success: false,
+          success:
+            false,
 
           code:
+            cloudResult.code ||
             'USER_NOT_FOUND',
 
           message:
+            cloudResult.message ||
             'Este correo no está autorizado para ingresar.'
 
         };
@@ -797,7 +1713,7 @@ export const authenticateGymUser =
 
 
       // ==================================================
-      // USUARIO DESACTIVADO
+      // USUARIO LOCAL DESACTIVADO
       // ==================================================
 
       if (
@@ -807,7 +1723,8 @@ export const authenticateGymUser =
 
         return {
 
-          success: false,
+          success:
+            false,
 
           code:
             'USER_INACTIVE',
@@ -821,7 +1738,7 @@ export const authenticateGymUser =
 
 
       // ==================================================
-      // ESTADO DEL SERVICIO NEXGYM
+      // ESTADO DEL SERVICIO LOCAL
       // ==================================================
 
       const gymStatus =
@@ -837,7 +1754,8 @@ export const authenticateGymUser =
 
         return {
 
-          success: false,
+          success:
+            false,
 
           code:
             'GYM_SUSPENDED',
@@ -851,7 +1769,7 @@ export const authenticateGymUser =
 
 
       // ==================================================
-      // PASSWORD
+      // PASSWORD LOCAL LEGACY
       // ==================================================
 
       const passwordHash =
@@ -867,7 +1785,8 @@ export const authenticateGymUser =
 
         return {
 
-          success: false,
+          success:
+            false,
 
           code:
             'INVALID_PASSWORD',
@@ -897,14 +1816,16 @@ export const authenticateGymUser =
         );
 
 
-      // ==================================================
-      // SESIÓN
-      // ==================================================
-
       const session = {
 
         id:
           user.id,
+
+        source:
+          'local',
+
+        isCloudUser:
+          false,
 
         gymId:
           user.gymId ||
@@ -940,10 +1861,6 @@ export const authenticateGymUser =
 
       };
 
-
-      // ==================================================
-      // ACTUALIZAR USUARIO
-      // ==================================================
 
       const updatedUser = {
 
@@ -982,10 +1899,6 @@ export const authenticateGymUser =
       );
 
 
-      // ==================================================
-      // GUARDAR SESIÓN
-      // ==================================================
-
       localStorage.setItem(
         AUTH_KEY,
         'true'
@@ -999,10 +1912,6 @@ export const authenticateGymUser =
         )
       );
 
-
-      // ==================================================
-      // ACTUALIZAR CONEXIÓN
-      // ==================================================
 
       if (
         user.gymId
@@ -1032,7 +1941,8 @@ export const authenticateGymUser =
 
       return {
 
-        success: true,
+        success:
+          true,
 
         user:
           updatedUser,
@@ -1041,7 +1951,9 @@ export const authenticateGymUser =
 
       };
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
         'Error iniciando sesión:',
@@ -1051,12 +1963,14 @@ export const authenticateGymUser =
 
       return {
 
-        success: false,
+        success:
+          false,
 
         code:
           'LOGIN_ERROR',
 
         message:
+          error?.message ||
           'No se pudo iniciar sesión.'
 
       };
@@ -1081,6 +1995,25 @@ export const logoutGymUser =
     localStorage.removeItem(
       SESSION_KEY
     );
+
+
+    // Cerrar también la sesión Supabase si existe.
+    //
+    // No hacemos await porque esta función se utiliza
+    // síncronamente en varias partes de la aplicación.
+
+    supabase.auth
+      .signOut()
+      .catch(
+        error => {
+
+          console.warn(
+            '⚠️ No se pudo cerrar sesión Supabase:',
+            error
+          );
+
+        }
+      );
 
 
     window.dispatchEvent(
@@ -1794,7 +2727,8 @@ export const changeCurrentUserPassword =
 
         return {
 
-          success: false,
+          success:
+            false,
 
           code:
             'NO_SESSION',
@@ -1809,13 +2743,15 @@ export const changeCurrentUserPassword =
 
       const current =
         String(
-          currentPassword || ''
+          currentPassword ||
+          ''
         );
 
 
       const next =
         String(
-          newPassword || ''
+          newPassword ||
+          ''
         );
 
 
@@ -1826,7 +2762,8 @@ export const changeCurrentUserPassword =
 
         return {
 
-          success: false,
+          success:
+            false,
 
           code:
             'EMPTY_FIELDS',
@@ -1846,7 +2783,8 @@ export const changeCurrentUserPassword =
 
         return {
 
-          success: false,
+          success:
+            false,
 
           code:
             'PASSWORD_TOO_SHORT',
@@ -1866,7 +2804,8 @@ export const changeCurrentUserPassword =
 
         return {
 
-          success: false,
+          success:
+            false,
 
           code:
             'SAME_PASSWORD',
@@ -1898,7 +2837,8 @@ export const changeCurrentUserPassword =
 
         return {
 
-          success: false,
+          success:
+            false,
 
           code:
             'USER_NOT_FOUND',
@@ -1917,6 +2857,225 @@ export const changeCurrentUserPassword =
         ];
 
 
+      // ==================================================
+      // USUARIO CLOUD
+      // ==================================================
+
+      if (
+        user.isCloudUser ||
+        user.source ===
+          'supabase' ||
+        session.isCloudUser ||
+        session.source ===
+          'supabase'
+      ) {
+
+        // Primero validamos la contraseña actual.
+        const {
+          error:
+            signInError
+        } =
+          await supabase.auth
+            .signInWithPassword({
+
+              email:
+                session.email,
+
+              password:
+                current
+
+            });
+
+
+        if (
+          signInError
+        ) {
+
+          return {
+
+            success:
+              false,
+
+            code:
+              'INVALID_CURRENT_PASSWORD',
+
+            message:
+              'La contraseña actual es incorrecta.'
+
+          };
+
+        }
+
+
+        const {
+          error:
+            updatePasswordError
+        } =
+          await supabase.auth
+            .updateUser({
+
+              password:
+                next
+
+            });
+
+
+        if (
+          updatePasswordError
+        ) {
+
+          console.error(
+            '❌ Error actualizando contraseña Supabase:',
+            updatePasswordError
+          );
+
+
+          return {
+
+            success:
+              false,
+
+            code:
+              'SUPABASE_PASSWORD_UPDATE_ERROR',
+
+            message:
+              updatePasswordError.message ||
+              'No se pudo cambiar la contraseña.'
+
+          };
+
+        }
+
+
+        const now =
+          new Date()
+            .toISOString();
+
+
+        const updatedUser = {
+
+          ...user,
+
+          mustChangePassword:
+            false,
+
+          passwordUpdatedAt:
+            now,
+
+          updatedAt:
+            now
+
+        };
+
+
+        const updatedUsers =
+          users.map(
+            (
+              item,
+              index
+            ) =>
+              index ===
+              userIndex
+                ? updatedUser
+                : item
+          );
+
+
+        saveGymUsers(
+          updatedUsers
+        );
+
+
+        const {
+          error:
+            gymUserUpdateError
+        } =
+          await supabase
+
+            .from(
+              'gym_users'
+            )
+
+            .update({
+
+              must_change_password:
+                false,
+
+              updated_at:
+                now
+
+            })
+
+            .eq(
+              'id',
+              user.id
+            );
+
+
+        if (
+          gymUserUpdateError
+        ) {
+
+          console.warn(
+            '⚠️ Contraseña cambiada, pero no se pudo actualizar must_change_password:',
+            gymUserUpdateError
+          );
+
+        }
+
+
+        const updatedSession = {
+
+          ...session,
+
+          mustChangePassword:
+            false
+
+        };
+
+
+        localStorage.setItem(
+          SESSION_KEY,
+          JSON.stringify(
+            updatedSession
+          )
+        );
+
+
+        window.dispatchEvent(
+          new Event(
+            'gym-auth-update'
+          )
+        );
+
+
+        window.dispatchEvent(
+          new Event(
+            'gym-storage-update'
+          )
+        );
+
+
+        return {
+
+          success:
+            true,
+
+          code:
+            'PASSWORD_UPDATED',
+
+          message:
+            'Contraseña actualizada correctamente.'
+
+        };
+
+      }
+
+
+      // ==================================================
+      // USUARIO LOCAL LEGACY
+      // ==================================================
+
       const currentHash =
         await hashValue(
           current
@@ -1930,7 +3089,8 @@ export const changeCurrentUserPassword =
 
         return {
 
-          success: false,
+          success:
+            false,
 
           code:
             'INVALID_CURRENT_PASSWORD',
@@ -2010,7 +3170,8 @@ export const changeCurrentUserPassword =
 
       return {
 
-        success: true,
+        success:
+          true,
 
         code:
           'PASSWORD_UPDATED',
@@ -2020,7 +3181,9 @@ export const changeCurrentUserPassword =
 
       };
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
         'Error cambiando contraseña:',
@@ -2030,12 +3193,14 @@ export const changeCurrentUserPassword =
 
       return {
 
-        success: false,
+        success:
+          false,
 
         code:
           'PASSWORD_UPDATE_ERROR',
 
         message:
+          error?.message ||
           'No se pudo cambiar la contraseña.'
 
       };

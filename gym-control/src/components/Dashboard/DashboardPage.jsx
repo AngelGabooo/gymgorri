@@ -38,6 +38,10 @@ import {
 import Sidebar from '../Layout/Sidebar';
 import Header from '../Layout/Header';
 
+import {
+  getCurrentSession
+} from '../../services/authService.js';
+
 import MetricCard from './Cards/MetricCard';
 import QuickAction from './Cards/QuickAction';
 import DonutChart from './Charts/DonutChart';
@@ -146,6 +150,69 @@ const readLocalArray = (
     return [];
 
   }
+
+};
+
+
+// ======================================================
+// AISLAMIENTO POR GIMNASIO
+// ======================================================
+
+const getRecordGymId = (
+  record
+) => {
+
+  if (!record) {
+    return null;
+  }
+
+
+  return (
+    record.gymId ||
+    record.gym_id ||
+    record.gym?.id ||
+    record.metadata?.gymId ||
+    record.metadata?.gym_id ||
+    null
+  );
+
+};
+
+
+const filterRecordsByGym = (
+  records,
+  gymId
+) => {
+
+  const safeRecords =
+    Array.isArray(records)
+      ? records
+      : [];
+
+
+  // Si existe un gymId de sesión, el filtro es ESTRICTO.
+  // Los registros viejos sin gymId NO deben aparecer en un
+  // gimnasio nuevo. Así evitamos mezclar información entre
+  // clientes que usan el mismo navegador/dispositivo.
+
+  if (gymId) {
+
+    return safeRecords.filter(
+      record =>
+        String(
+          getRecordGymId(record) ||
+          ''
+        ) ===
+        String(gymId)
+    );
+
+  }
+
+
+  // Compatibilidad con instalaciones legacy que todavía
+  // no tienen gymId en la sesión.
+
+  return safeRecords;
 
 };
 
@@ -649,11 +716,26 @@ const DashboardPage = () => {
 
 
   const [
+    sales,
+    setSales
+  ] = useState([]);
+
+
+  const [
     lastUpdated,
     setLastUpdated
   ] = useState(
     new Date()
   );
+
+
+  const session =
+    getCurrentSession();
+
+
+  const currentGymId =
+    session?.gymId ||
+    null;
 
 
   const currency =
@@ -679,27 +761,97 @@ const DashboardPage = () => {
   const loadDashboardData =
     () => {
 
+      const currentSession =
+        getCurrentSession();
+
+
+      const gymId =
+        currentSession?.gymId ||
+        null;
+
+
+      const allMembers =
+        getStoredMembers();
+
+
+      const allAttendance =
+        readLocalArray(
+          ATTENDANCE_KEY
+        );
+
+
+      const allPayments =
+        readLocalArray(
+          PAYMENTS_KEY
+        );
+
+
+      const allSales =
+        getSales();
+
+
+      const gymMembers =
+        filterRecordsByGym(
+          allMembers,
+          gymId
+        );
+
+
+      const gymAttendance =
+        filterRecordsByGym(
+          allAttendance,
+          gymId
+        );
+
+
+      const gymPayments =
+        filterRecordsByGym(
+          allPayments,
+          gymId
+        );
+
+
+      const gymSales =
+        filterRecordsByGym(
+          allSales,
+          gymId
+        );
+
+
       setMembers(
-        getStoredMembers()
+        gymMembers
       );
 
 
       setAttendance(
-        readLocalArray(
-          ATTENDANCE_KEY
-        )
+        gymAttendance
       );
 
 
       setPayments(
-        readLocalArray(
-          PAYMENTS_KEY
-        )
+        gymPayments
+      );
+
+
+      setSales(
+        gymSales
       );
 
 
       setLastUpdated(
         new Date()
+      );
+
+
+      console.log(
+        '🏢 Dashboard aislado por gimnasio:',
+        {
+          gymId,
+          members: gymMembers.length,
+          attendance: gymAttendance.length,
+          payments: gymPayments.length,
+          sales: gymSales.length
+        }
       );
 
     };
@@ -728,6 +880,18 @@ const DashboardPage = () => {
       );
 
 
+      window.addEventListener(
+        'gym-auth-update',
+        handleUpdate
+      );
+
+
+      window.addEventListener(
+        'gym-sales-update',
+        handleUpdate
+      );
+
+
       const interval =
         setInterval(
           loadDashboardData,
@@ -745,6 +909,18 @@ const DashboardPage = () => {
 
         window.removeEventListener(
           'gym-storage-update',
+          handleUpdate
+        );
+
+
+        window.removeEventListener(
+          'gym-auth-update',
+          handleUpdate
+        );
+
+
+        window.removeEventListener(
+          'gym-sales-update',
           handleUpdate
         );
 
@@ -1677,10 +1853,10 @@ const DashboardPage = () => {
     useMemo(
       () =>
         getSalesSummary(
-          getSales()
+          sales
         ),
       [
-        payments
+        sales
       ]
     );
 
@@ -1736,7 +1912,7 @@ const DashboardPage = () => {
 
 
                 <p className="text-gray-500 text-sm mt-2 max-w-2xl">
-                  Miembros, accesos, suscripciones e ingresos actualizados desde la misma información local.
+                  Miembros, accesos, suscripciones e ingresos aislados para este gimnasio.
                 </p>
 
               </div>
@@ -3021,7 +3197,7 @@ const DashboardPage = () => {
                 </span>
 
                 <span className="text-gray-600 text-xs ml-2">
-                  Datos sincronizados localmente
+                  Datos aislados por gimnasio
                 </span>
 
               </div>
