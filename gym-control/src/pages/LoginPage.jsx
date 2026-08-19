@@ -1,6 +1,7 @@
 // src/pages/LoginPage.jsx
 
 import React from 'react';
+
 import {
   QrCode,
   Users,
@@ -15,11 +16,17 @@ import LoginForm from '../organisms/LoginForm';
 // TARJETA DE CARACTERÍSTICAS
 // ======================================================
 
-const FeatureCard = ({ icon: Icon, title }) => {
+const FeatureCard = ({
+  icon: Icon,
+  title
+}) => {
+
   return (
+
     <div className="group flex flex-col items-center text-center gap-3">
 
-      {/* Contenedor del icono */}
+      {/* CONTENEDOR DEL ICONO */}
+
       <div
         className="
           w-[72px]
@@ -46,19 +53,25 @@ const FeatureCard = ({ icon: Icon, title }) => {
           group-hover:shadow-[0_0_30px_rgba(0,255,136,0.15)]
         "
       >
+
         <Icon
           size={30}
           strokeWidth={1.7}
           className="
             text-[#00ff88]
+
             transition-transform
             duration-300
+
             group-hover:scale-110
           "
         />
+
       </div>
 
-      {/* Texto */}
+
+      {/* TEXTO */}
+
       <p
         className="
           text-gray-300
@@ -71,7 +84,9 @@ const FeatureCard = ({ icon: Icon, title }) => {
       </p>
 
     </div>
+
   );
+
 };
 
 
@@ -80,13 +95,18 @@ const FeatureCard = ({ icon: Icon, title }) => {
 // ======================================================
 
 const LoginPage = () => {
+
   return (
+
     <main
       className="
         min-h-screen
         w-full
+
         bg-[#050706]
+
         flex
+
         overflow-hidden
       "
     >
@@ -112,7 +132,8 @@ const LoginPage = () => {
           bg-no-repeat
         "
         style={{
-          backgroundImage: "url('/img/fondope.png')"
+          backgroundImage:
+            "url('/img/fondope.png')"
         }}
       >
 
@@ -206,7 +227,8 @@ const LoginPage = () => {
                 transparent 1px
               )
             `,
-            backgroundSize: '45px 45px'
+            backgroundSize:
+              '45px 45px'
           }}
         />
 
@@ -260,19 +282,29 @@ const LoginPage = () => {
             pointer-events-none
           "
         >
-          {Array.from({ length: 36 }).map((_, index) => (
-            <span
-              key={index}
-              className="
-                w-1
-                h-1
 
-                bg-[#00ff88]
+          {
+            Array.from({
+              length: 36
+            }).map(
+              (_, index) => (
 
-                rounded-full
-              "
-            />
-          ))}
+                <span
+                  key={index}
+                  className="
+                    w-1
+                    h-1
+
+                    bg-[#00ff88]
+
+                    rounded-full
+                  "
+                />
+
+              )
+            )
+          }
+
         </div>
 
 
@@ -300,7 +332,7 @@ const LoginPage = () => {
 
 
           {/* ================================================= */}
-          {/* LOGO */}
+          {/* LOGO NEXGYM */}
           {/* ================================================= */}
 
           <div
@@ -311,38 +343,55 @@ const LoginPage = () => {
             "
           >
 
-            {/* IMAGEN DEL LOGO */}
+            {/* LOGO DEL LOBO */}
 
             <div
               className="
-                w-16
-                h-16
+                w-[76px]
+                h-[76px]
 
                 flex
                 items-center
                 justify-center
 
                 flex-shrink-0
+
+                rounded-2xl
+                overflow-hidden
+
+                bg-black/50
+
+                border
+                border-[#00ff88]/25
+
+                shadow-[0_0_30px_rgba(0,255,136,0.15)]
+
+                transition-all
+                duration-300
+
+                hover:border-[#00ff88]/60
+                hover:shadow-[0_0_35px_rgba(0,255,136,0.25)]
               "
             >
+
               <img
-                src="/img/crede.png"
-                alt="Logo Gym Control"
+                src="/img/lobo.png"
+                alt="Logo NEXGYM"
                 className="
                   w-full
                   h-full
 
-                  object-contain
+                  object-cover
 
-                  drop-shadow-[0_0_18px_rgba(0,255,136,0.35)]
-
-                  transition-all
+                  transition-transform
                   duration-300
 
-                  hover:scale-105
-                  hover:drop-shadow-[0_0_25px_rgba(0,255,136,0.5)]
+                  hover:scale-110
+
+                  drop-shadow-[0_0_18px_rgba(0,255,136,0.45)]
                 "
               />
+
             </div>
 
 
@@ -356,21 +405,33 @@ const LoginPage = () => {
 
                   font-black
 
-                  tracking-wide
+                  tracking-[0.06em]
 
                   text-2xl
-                  xl:text-[26px]
+                  xl:text-[28px]
 
                   leading-none
                 "
               >
-                GYM CONTROL
+
+                NEX
+
+                <span
+                  className="
+                    text-[#00ff88]
+
+                    drop-shadow-[0_0_12px_rgba(0,255,136,0.25)]
+                  "
+                >
+                  GYM
+                </span>
+
               </h1>
 
 
               <p
                 className="
-                  text-[#00ff88]
+                  text-gray-400
 
                   text-[10px]
                   xl:text-[11px]
@@ -543,10 +604,12 @@ const LoginPage = () => {
                 shadow-[0_0_20px_rgba(0,255,136,0.08)]
               "
             >
+
               <ShieldCheck
                 size={18}
                 className="text-[#00ff88]"
               />
+
             </div>
 
 
@@ -675,7 +738,10 @@ const LoginPage = () => {
       </section>
 
     </main>
+
   );
+
 };
+
 
 export default LoginPage;
