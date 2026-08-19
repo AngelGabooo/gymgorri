@@ -1383,6 +1383,4 @@ const productService = {
   getLowStockProducts
 
 };
-
-
 export default productService;

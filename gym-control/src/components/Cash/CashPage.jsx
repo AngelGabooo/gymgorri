@@ -990,11 +990,11 @@ const CashPage = () => {
                       label="Ventas"
                       value={
                         formatMoney(
-                          liveSummary?.sales?.total,
+                          liveSummary?.salesSummary?.total,
                           currency
                         )
                       }
-                      subtitle={`${liveSummary?.sales?.count || 0} ventas · ${liveSummary?.sales?.itemCount || 0} productos · ${formatMoney(liveSummary?.sales?.cash, currency)} efectivo`}
+                      subtitle={`${liveSummary?.salesSummary?.count || 0} ventas · ${liveSummary?.salesSummary?.itemCount || 0} productos · ${formatMoney(liveSummary?.salesSummary?.cashNet, currency)} efectivo neto`}
                     />
 
                     <CashCard
@@ -1008,6 +1008,110 @@ const CashPage = () => {
                       }
                       highlight
                     />
+
+                  </div>
+
+
+                  {/* ================================================== */}
+                  {/* ARQUEO FÍSICO EN VIVO */}
+                  {/* ================================================== */}
+
+                  <div className="bg-[#111111] border border-[#1a1a1a] rounded-2xl p-5">
+
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-5">
+
+                      <div>
+
+                        <p className="text-[#00ff88] text-xs font-black uppercase tracking-[0.16em]">
+                          Arqueo físico en vivo
+                        </p>
+
+                        <h3 className="text-white text-lg font-black mt-1">
+                          Entradas y salidas reales de efectivo
+                        </h3>
+
+                        <p className="text-gray-500 text-sm mt-1">
+                          Así puedes comprobar exactamente cuánto entró, cuánto salió en cambio y cuánto debe quedar en caja.
+                        </p>
+
+                      </div>
+
+                      <div className="px-4 py-2 rounded-xl bg-[#00ff88]/10 border border-[#00ff88]/20">
+
+                        <p className="text-gray-500 text-[10px] uppercase tracking-wider">
+                          Neto por ventas y membresías
+                        </p>
+
+                        <p className="text-[#00ff88] text-xl font-black mt-1">
+                          {
+                            formatMoney(
+                              liveSummary?.cashFlow?.netSalesAndMemberships,
+                              currency
+                            )
+                          }
+                        </p>
+
+                      </div>
+
+                    </div>
+
+
+                    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+
+                      <CloseMetric
+                        label="Fondo inicial"
+                        value={
+                          formatMoney(
+                            liveSummary?.openingCash,
+                            currency
+                          )
+                        }
+                      />
+
+                      <CloseMetric
+                        label="Efectivo recibido"
+                        value={
+                          formatMoney(
+                            liveSummary?.cashFlow?.received,
+                            currency
+                          )
+                        }
+                      />
+
+                      <CloseMetric
+                        label="Cambio entregado"
+                        value={
+                          `-${formatMoney(
+                            liveSummary?.cashFlow?.changeGiven,
+                            currency
+                          )}`
+                        }
+                      />
+
+                      <CloseMetric
+                        label="Efectivo esperado"
+                        value={
+                          formatMoney(
+                            liveSummary?.expectedCash,
+                            currency
+                          )
+                        }
+                      />
+
+                    </div>
+
+
+                    <div className="mt-4 px-4 py-3 rounded-xl bg-[#0d0d0d] border border-[#1a1a1a]">
+
+                      <p className="text-gray-500 text-xs">
+                        Fórmula:
+                        {' '}
+                        <span className="text-white font-semibold">
+                          inicial + recibido − cambio + otros ingresos − gastos − retiros
+                        </span>
+                      </p>
+
+                    </div>
 
                   </div>
 
@@ -1040,14 +1144,14 @@ const CashPage = () => {
                               <p className="text-[#00ff88] text-xl font-black">
                                 {
                                   formatMoney(
-                                    liveSummary?.sales?.total,
+                                    liveSummary?.salesSummary?.total,
                                     currency
                                   )
                                 }
                               </p>
 
                               <p className="text-gray-600 text-xs mt-1">
-                                {liveSummary?.sales?.count || 0} operaciones · {liveSummary?.sales?.itemCount || 0} productos
+                                {liveSummary?.salesSummary?.count || 0} operaciones · {liveSummary?.salesSummary?.itemCount || 0} productos
                               </p>
 
                             </div>
@@ -1112,6 +1216,63 @@ const CashPage = () => {
                                                 )
                                               }
                                             </p>
+
+                                            {
+                                              String(
+                                                sale.paymentMethod ||
+                                                ''
+                                              ).toLowerCase() ===
+                                                'efectivo' &&
+                                              (
+                                                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs">
+                                                  <span className="text-gray-500">
+                                                    Recibido:{' '}
+                                                    <strong className="text-white">
+                                                      {
+                                                        formatMoney(
+                                                          sale.received ??
+                                                          sale.total,
+                                                          currency
+                                                        )
+                                                      }
+                                                    </strong>
+                                                  </span>
+
+                                                  <span className="text-gray-500">
+                                                    Cambio:{' '}
+                                                    <strong className="text-red-400">
+                                                      -{
+                                                        formatMoney(
+                                                          sale.change ||
+                                                          0,
+                                                          currency
+                                                        )
+                                                      }
+                                                    </strong>
+                                                  </span>
+
+                                                  <span className="text-gray-500">
+                                                    Neto:{' '}
+                                                    <strong className="text-[#00ff88]">
+                                                      {
+                                                        formatMoney(
+                                                          Number(
+                                                            sale.received ??
+                                                            sale.total ??
+                                                            0
+                                                          ) -
+                                                          Number(
+                                                            sale.change ||
+                                                            0
+                                                          ),
+                                                          currency
+                                                        )
+                                                      }
+                                                    </strong>
+                                                  </span>
+                                                </div>
+                                              )
+                                            }
 
                                           </div>
 
@@ -1474,6 +1635,42 @@ const CashPage = () => {
                     <div className="space-y-4">
 
                       <CashSummaryBox
+                        icon={Banknote}
+                        label="Efectivo recibido"
+                        value={
+                          formatMoney(
+                            liveSummary?.cashFlow?.received,
+                            currency
+                          )
+                        }
+                        tone="positive"
+                      />
+
+                      <CashSummaryBox
+                        icon={TrendingDown}
+                        label="Cambio entregado"
+                        value={
+                          formatMoney(
+                            liveSummary?.cashFlow?.changeGiven,
+                            currency
+                          )
+                        }
+                        tone="negative"
+                      />
+
+                      <CashSummaryBox
+                        icon={CircleDollarSign}
+                        label="Ingreso neto en efectivo"
+                        value={
+                          formatMoney(
+                            liveSummary?.cashFlow?.netSalesAndMemberships,
+                            currency
+                          )
+                        }
+                        tone="positive"
+                      />
+
+                      <CashSummaryBox
                         icon={PlusCircle}
                         label="Otros ingresos"
                         value={
@@ -1510,6 +1707,76 @@ const CashPage = () => {
                       />
 
 
+                      <div className="bg-[#111111] border border-[#1a1a1a] rounded-2xl p-5">
+
+                        <p className="text-gray-500 text-xs uppercase tracking-wider">
+                          Flujo de efectivo
+                        </p>
+
+                        <div className="space-y-3 mt-4">
+                          <SummaryLine
+                            label="Fondo inicial"
+                            value={
+                              formatMoney(
+                                liveSummary?.openingCash,
+                                currency
+                              )
+                            }
+                          />
+
+                          <SummaryLine
+                            label="+ Recibido de clientes"
+                            value={
+                              formatMoney(
+                                liveSummary?.cashFlow?.received,
+                                currency
+                              )
+                            }
+                            tone="positive"
+                          />
+
+                          <SummaryLine
+                            label="- Cambio entregado"
+                            value={`-${formatMoney(
+                              liveSummary?.cashFlow?.changeGiven,
+                              currency
+                            )}`}
+                            tone="negative"
+                          />
+
+                          <SummaryLine
+                            label="+ Otros ingresos"
+                            value={
+                              formatMoney(
+                                liveSummary?.otherIncome,
+                                currency
+                              )
+                            }
+                            tone="positive"
+                          />
+
+                          <SummaryLine
+                            label="- Gastos"
+                            value={`-${formatMoney(
+                              liveSummary?.expenses,
+                              currency
+                            )}`}
+                            tone="negative"
+                          />
+
+                          <SummaryLine
+                            label="- Retiros"
+                            value={`-${formatMoney(
+                              liveSummary?.withdrawals,
+                              currency
+                            )}`}
+                            tone="negative"
+                          />
+                        </div>
+
+                      </div>
+
+
                       <div className="bg-[#00ff88]/5 border border-[#00ff88]/20 rounded-2xl p-5">
 
                         <p className="text-gray-500 text-xs uppercase tracking-wider">
@@ -1526,7 +1793,7 @@ const CashPage = () => {
                         </p>
 
                         <p className="text-gray-500 text-xs mt-2 leading-relaxed">
-                          Inicial + membresías en efectivo + ventas en efectivo + otros ingresos − gastos − retiros.
+                          Inicial + efectivo recibido − cambio entregado + otros ingresos − gastos − retiros.
                         </p>
 
                       </div>
@@ -2018,6 +2285,46 @@ const CashPage = () => {
                     value={
                       formatMoney(
                         liveSummary.totalHandled,
+                        currency
+                      )
+                    }
+                  />
+
+                  <CloseMetric
+                    label="Efectivo recibido"
+                    value={
+                      formatMoney(
+                        liveSummary.cashFlow?.received,
+                        currency
+                      )
+                    }
+                  />
+
+                  <CloseMetric
+                    label="Cambio entregado"
+                    value={
+                      formatMoney(
+                        liveSummary.cashFlow?.changeGiven,
+                        currency
+                      )
+                    }
+                  />
+
+                  <CloseMetric
+                    label="Fondo inicial"
+                    value={
+                      formatMoney(
+                        liveSummary.openingCash,
+                        currency
+                      )
+                    }
+                  />
+
+                  <CloseMetric
+                    label="Neto en efectivo"
+                    value={
+                      formatMoney(
+                        liveSummary.cashFlow?.netSalesAndMemberships,
                         currency
                       )
                     }

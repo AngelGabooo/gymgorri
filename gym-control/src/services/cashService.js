@@ -1301,6 +1301,15 @@ export const calculateCashShiftSummary =
           cash:
             0,
 
+          cashReceived:
+            0,
+
+          changeGiven:
+            0,
+
+          cashNet:
+            0,
+
           count:
             0
 
@@ -1312,6 +1321,15 @@ export const calculateCashShiftSummary =
             0,
 
           cash:
+            0,
+
+          cashReceived:
+            0,
+
+          changeGiven:
+            0,
+
+          cashNet:
             0,
 
           count:
@@ -1336,6 +1354,19 @@ export const calculateCashShiftSummary =
 
         expectedCash:
           0,
+
+        cashFlow: {
+
+          received:
+            0,
+
+          changeGiven:
+            0,
+
+          netSalesAndMemberships:
+            0
+
+        },
 
         paymentMethods:
           {}
@@ -1381,26 +1412,65 @@ export const calculateCashShiftSummary =
       );
 
 
+    const cashMembershipPayments =
+      payments.filter(
+        payment =>
+          isCashMethod(
+            payment.paymentMethod ||
+            payment.method
+          )
+      );
+
+
     const membershipsCash =
-      payments
-        .filter(
-          payment =>
-            isCashMethod(
-              payment.paymentMethod ||
-              payment.method
-            )
-        )
-        .reduce(
-          (
-            sum,
-            payment
-          ) =>
-            sum +
-            parseAmount(
-              payment.amount
-            ),
-          0
-        );
+      cashMembershipPayments.reduce(
+        (
+          sum,
+          payment
+        ) =>
+          sum +
+          parseAmount(
+            payment.amount
+          ),
+        0
+      );
+
+
+    const membershipsCashReceived =
+      cashMembershipPayments.reduce(
+        (
+          sum,
+          payment
+        ) =>
+          sum +
+          parseAmount(
+            payment.receivedAmount ??
+            payment.received ??
+            payment.amount
+          ),
+        0
+      );
+
+
+    const membershipsChangeGiven =
+      cashMembershipPayments.reduce(
+        (
+          sum,
+          payment
+        ) =>
+          sum +
+          parseAmount(
+            payment.change ??
+            payment.changeAmount ??
+            0
+          ),
+        0
+      );
+
+
+    const membershipsCashNet =
+      membershipsCashReceived -
+      membershipsChangeGiven;
 
 
     // ==================================================
@@ -1421,25 +1491,64 @@ export const calculateCashShiftSummary =
       );
 
 
+    const cashSales =
+      sales.filter(
+        sale =>
+          isCashMethod(
+            sale.paymentMethod
+          )
+      );
+
+
     const salesCash =
-      sales
-        .filter(
-          sale =>
-            isCashMethod(
-              sale.paymentMethod
-            )
-        )
-        .reduce(
-          (
-            sum,
-            sale
-          ) =>
-            sum +
-            parseAmount(
-              sale.total
-            ),
-          0
-        );
+      cashSales.reduce(
+        (
+          sum,
+          sale
+        ) =>
+          sum +
+          parseAmount(
+            sale.total
+          ),
+        0
+      );
+
+
+    const salesCashReceived =
+      cashSales.reduce(
+        (
+          sum,
+          sale
+        ) =>
+          sum +
+          parseAmount(
+            sale.received ??
+            sale.receivedAmount ??
+            sale.total
+          ),
+        0
+      );
+
+
+    const salesChangeGiven =
+      cashSales.reduce(
+        (
+          sum,
+          sale
+        ) =>
+          sum +
+          parseAmount(
+            sale.change ??
+            sale.changeAmount ??
+            0
+          ),
+        0
+      );
+
+
+    const salesCashNet =
+      salesCashReceived -
+      salesChangeGiven;
 
 
     // ==================================================
@@ -1590,10 +1699,25 @@ export const calculateCashShiftSummary =
       );
 
 
+    const totalCashReceived =
+      membershipsCashReceived +
+      salesCashReceived;
+
+
+    const totalChangeGiven =
+      membershipsChangeGiven +
+      salesChangeGiven;
+
+
+    const netSalesAndMemberships =
+      membershipsCashNet +
+      salesCashNet;
+
+
     const expectedCash =
       openingCash +
-      membershipsCash +
-      salesCash +
+      totalCashReceived -
+      totalChangeGiven +
       otherIncome -
       expenses -
       withdrawals;
@@ -1699,18 +1823,36 @@ export const calculateCashShiftSummary =
         cash:
           membershipsCash,
 
+        cashReceived:
+          membershipsCashReceived,
+
+        changeGiven:
+          membershipsChangeGiven,
+
+        cashNet:
+          membershipsCashNet,
+
         count:
           payments.length
 
       },
 
-      sales: {
+      salesSummary: {
 
         total:
           salesTotal,
 
         cash:
           salesCash,
+
+        cashReceived:
+          salesCashReceived,
+
+        changeGiven:
+          salesChangeGiven,
+
+        cashNet:
+          salesCashNet,
 
         count:
           sales.length,
@@ -1740,6 +1882,18 @@ export const calculateCashShiftSummary =
       withdrawals,
 
       expectedCash,
+
+      cashFlow: {
+
+        received:
+          totalCashReceived,
+
+        changeGiven:
+          totalChangeGiven,
+
+        netSalesAndMemberships
+
+      },
 
       paymentMethods,
 
@@ -1908,10 +2062,10 @@ export const closeCashShift =
           summary.memberships,
 
         sales:
-          summary.sales,
+          summary.salesSummary,
 
         soldProducts:
-          summary.sales?.products ||
+          summary.salesSummary?.products ||
           [],
 
         otherIncome:
@@ -1922,6 +2076,21 @@ export const closeCashShift =
 
         withdrawals:
           summary.withdrawals,
+
+        cashFlow:
+          summary.cashFlow,
+
+        cashReceived:
+          summary.cashFlow?.received ||
+          0,
+
+        changeGiven:
+          summary.cashFlow?.changeGiven ||
+          0,
+
+        netSalesAndMemberships:
+          summary.cashFlow?.netSalesAndMemberships ||
+          0,
 
         expectedCash:
           summary.expectedCash,
