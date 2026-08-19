@@ -2452,9 +2452,6 @@ export const registerNexgymCloudPayment =
 
             .update({
 
-              status:
-                'active',
-
               subscription_status:
                 'active',
 
@@ -2485,41 +2482,6 @@ export const registerNexgymCloudPayment =
           console.error(
             '❌ Error actualizando gym:',
             gymError
-          );
-
-        }
-
-
-        const {
-          error:
-            usersError
-        } =
-          await supabase
-
-            .from(
-              'gym_users'
-            )
-
-            .update({
-
-              status:
-                'active'
-
-            })
-
-            .eq(
-              'gym_id',
-              gymId
-            );
-
-
-        if (
-          usersError
-        ) {
-
-          console.error(
-            '❌ Error reactivando usuarios:',
-            usersError
           );
 
         }
@@ -2630,6 +2592,296 @@ export const registerNexgymCloudPayment =
           error?.message ||
           'No se pudo registrar el pago.'
 
+      };
+
+    }
+
+  };
+
+
+// ======================================================
+// MARCAR AVISO DE RENOVACIÓN
+// ======================================================
+//
+// Usa el estado existente "past_due". No suspende el
+// acceso y no necesita columnas nuevas en Supabase.
+// ======================================================
+
+export const markNexgymCloudRenewalNotice =
+  async (
+    gymId
+  ) => {
+
+    try {
+
+      const gymResult =
+        await getNexgymCloudGymById(
+          gymId
+        );
+
+
+      if (
+        !gymResult.success ||
+        !gymResult.gym
+      ) {
+
+        return {
+          success: false,
+          message: 'Gimnasio no encontrado.'
+        };
+
+      }
+
+
+      const gym =
+        gymResult.gym;
+
+
+      if (
+        gym.access?.accountStatus ===
+          'inactive' ||
+        gym.subscription?.status ===
+          'suspended'
+      ) {
+
+        return {
+          success: false,
+          message: 'No puedes marcar un aviso de renovación mientras el servicio está suspendido o desactivado.'
+        };
+
+      }
+
+
+      const {
+        error: subscriptionError
+      } =
+        await supabase
+          .from(
+            'gym_subscriptions'
+          )
+          .update({
+            status: 'past_due'
+          })
+          .eq(
+            'gym_id',
+            gymId
+          );
+
+
+      if (
+        subscriptionError
+      ) {
+
+        return {
+          success: false,
+          message:
+            subscriptionError.message ||
+            'No se pudo marcar el aviso de renovación.'
+        };
+
+      }
+
+
+      const {
+        error: gymError
+      } =
+        await supabase
+          .from(
+            'gyms'
+          )
+          .update({
+            subscription_status: 'past_due'
+          })
+          .eq(
+            'id',
+            gymId
+          );
+
+
+      if (
+        gymError
+      ) {
+
+        return {
+          success: false,
+          message:
+            gymError.message ||
+            'No se pudo actualizar el gimnasio.'
+        };
+
+      }
+
+
+      await addCloudActivity({
+        gymId,
+        type: 'renewal_notice',
+        title: 'Aviso de renovación activado',
+        description:
+          `${gym.name} fue marcado para mostrar aviso de renovación al iniciar sesión.`
+      });
+
+
+      window.dispatchEvent(
+        new Event(
+          'nexgym-gyms-update'
+        )
+      );
+
+
+      return {
+        success: true
+      };
+
+    } catch (error) {
+
+      return {
+        success: false,
+        message:
+          error?.message ||
+          'No se pudo marcar el aviso de renovación.'
+      };
+
+    }
+
+  };
+
+
+// ======================================================
+// QUITAR AVISO MANUAL DE RENOVACIÓN
+// ======================================================
+
+export const clearNexgymCloudRenewalNotice =
+  async (
+    gymId
+  ) => {
+
+    try {
+
+      const gymResult =
+        await getNexgymCloudGymById(
+          gymId
+        );
+
+
+      if (
+        !gymResult.success ||
+        !gymResult.gym
+      ) {
+
+        return {
+          success: false,
+          message: 'Gimnasio no encontrado.'
+        };
+
+      }
+
+
+      const gym =
+        gymResult.gym;
+
+
+      if (
+        gym.access?.accountStatus ===
+          'inactive' ||
+        gym.subscription?.status ===
+          'suspended'
+      ) {
+
+        return {
+          success: false,
+          message: 'Reactiva primero el servicio antes de quitar el aviso de renovación.'
+        };
+
+      }
+
+
+      const {
+        error: subscriptionError
+      } =
+        await supabase
+          .from(
+            'gym_subscriptions'
+          )
+          .update({
+            status: 'active'
+          })
+          .eq(
+            'gym_id',
+            gymId
+          );
+
+
+      if (
+        subscriptionError
+      ) {
+
+        return {
+          success: false,
+          message:
+            subscriptionError.message ||
+            'No se pudo quitar el aviso de renovación.'
+        };
+
+      }
+
+
+      const {
+        error: gymError
+      } =
+        await supabase
+          .from(
+            'gyms'
+          )
+          .update({
+            subscription_status: 'active'
+          })
+          .eq(
+            'id',
+            gymId
+          );
+
+
+      if (
+        gymError
+      ) {
+
+        return {
+          success: false,
+          message:
+            gymError.message ||
+            'No se pudo actualizar el gimnasio.'
+        };
+
+      }
+
+
+      await addCloudActivity({
+        gymId,
+        type: 'renewal_notice_cleared',
+        title: 'Aviso de renovación retirado',
+        description:
+          `Se retiró el aviso manual de renovación de ${gym.name}.`
+      });
+
+
+      window.dispatchEvent(
+        new Event(
+          'nexgym-gyms-update'
+        )
+      );
+
+
+      return {
+        success: true
+      };
+
+    } catch (error) {
+
+      return {
+        success: false,
+        message:
+          error?.message ||
+          'No se pudo quitar el aviso de renovación.'
       };
 
     }
@@ -2825,9 +3077,6 @@ export const extendNexgymCloudService =
           ?.accountStatus !==
         'inactive'
       ) {
-
-        gymUpdate.status =
-          'active';
 
         gymUpdate.subscription_status =
           'active';
@@ -3051,7 +3300,8 @@ export const extendNexgymCloudService =
 
 export const suspendNexgymCloudGym =
   async (
-    gymId
+    gymId,
+    reason = ''
   ) => {
 
     try {
@@ -3161,40 +3411,6 @@ export const suspendNexgymCloudGym =
       }
 
 
-      const {
-        error:
-          usersError
-      } =
-        await supabase
-
-          .from(
-            'gym_users'
-          )
-
-          .update({
-
-            status:
-              'suspended'
-
-          })
-
-          .eq(
-            'gym_id',
-            gymId
-          );
-
-
-      if (
-        usersError
-      ) {
-
-        console.warn(
-          usersError
-        );
-
-      }
-
-
       await addCloudActivity({
 
         gymId,
@@ -3206,7 +3422,11 @@ export const suspendNexgymCloudGym =
           'Gimnasio suspendido',
 
         description:
-          `${gym.name} fue suspendido.`
+          cleanText(
+            reason
+          )
+            ? `${gym.name} fue suspendido. Motivo: ${cleanText(reason)}`
+            : `${gym.name} fue suspendido.`
 
       });
 
@@ -3346,25 +3566,6 @@ export const reactivateNexgymCloudGym =
         );
 
 
-      await supabase
-
-        .from(
-          'gym_users'
-        )
-
-        .update({
-
-          status:
-            'active'
-
-        })
-
-        .eq(
-          'gym_id',
-          gymId
-        );
-
-
       await addCloudActivity({
 
         gymId,
@@ -3421,7 +3622,8 @@ export const reactivateNexgymCloudGym =
 
 export const deactivateNexgymCloudGym =
   async (
-    gymId
+    gymId,
+    reason = ''
   ) => {
 
     try {
@@ -3516,25 +3718,6 @@ export const deactivateNexgymCloudGym =
         );
 
 
-      await supabase
-
-        .from(
-          'gym_users'
-        )
-
-        .update({
-
-          status:
-            'inactive'
-
-        })
-
-        .eq(
-          'gym_id',
-          gymId
-        );
-
-
       await addCloudActivity({
 
         gymId,
@@ -3546,7 +3729,11 @@ export const deactivateNexgymCloudGym =
           'Gimnasio desactivado',
 
         description:
-          `${gym.name} fue desactivado.`
+          cleanText(
+            reason
+          )
+            ? `${gym.name} fue desactivado. Motivo: ${cleanText(reason)}`
+            : `${gym.name} fue desactivado.`
 
       });
 

@@ -510,6 +510,249 @@ const normalizeUserGymData = (
 // NORMALIZAR ROL DE SUPABASE
 // ======================================================
 
+
+// ======================================================
+// AVISO DE RENOVACIÓN
+// ======================================================
+//
+// No requiere columnas nuevas en Supabase.
+// Se activa cuando:
+//
+// 1. La suscripción está marcada como "past_due".
+// 2. Faltan 7 días o menos para next_payment_date.
+// 3. La fecha de pago ya venció.
+//
+// ======================================================
+
+const buildRenewalNotice = (
+  subscription,
+  gym
+) => {
+
+  const nextPaymentDate =
+    subscription?.next_payment_date ||
+    gym?.subscription_next_payment_date ||
+    null;
+
+
+  const subscriptionStatus =
+    subscription?.status ||
+    gym?.subscription_status ||
+    'active';
+
+
+  if (
+    !nextPaymentDate
+  ) {
+
+    return null;
+
+  }
+
+
+  const paymentDate =
+    String(
+      nextPaymentDate
+    ).length === 10
+      ? new Date(
+          `${nextPaymentDate}T12:00:00`
+        )
+      : new Date(
+          nextPaymentDate
+        );
+
+
+  if (
+    Number.isNaN(
+      paymentDate.getTime()
+    )
+  ) {
+
+    return null;
+
+  }
+
+
+  const today =
+    new Date();
+
+
+  const todayAtNoon =
+    new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
+      12,
+      0,
+      0,
+      0
+    );
+
+
+  const paymentAtNoon =
+    new Date(
+      paymentDate.getFullYear(),
+      paymentDate.getMonth(),
+      paymentDate.getDate(),
+      12,
+      0,
+      0,
+      0
+    );
+
+
+  const millisecondsPerDay =
+    1000 *
+    60 *
+    60 *
+    24;
+
+
+  const daysRemaining =
+    Math.ceil(
+      (
+        paymentAtNoon.getTime() -
+        todayAtNoon.getTime()
+      ) /
+      millisecondsPerDay
+    );
+
+
+  const manuallyMarked =
+    subscriptionStatus ===
+    'past_due';
+
+
+  const shouldNotify =
+    manuallyMarked ||
+    daysRemaining <=
+      7;
+
+
+  if (
+    !shouldNotify
+  ) {
+
+    return null;
+
+  }
+
+
+  let title =
+    'Tu suscripción necesita renovación';
+
+
+  let message =
+    `Tu próximo pago está programado para el ${nextPaymentDate}.`;
+
+
+  let severity =
+    'warning';
+
+
+  if (
+    daysRemaining <
+    0
+  ) {
+
+    const overdueDays =
+      Math.abs(
+        daysRemaining
+      );
+
+
+    title =
+      'Tu suscripción está pendiente de renovación';
+
+
+    message =
+      overdueDays ===
+      1
+        ? `Tu fecha de renovación venció ayer (${nextPaymentDate}). Contacta a soporte para regularizar el servicio.`
+        : `Tu fecha de renovación venció hace ${overdueDays} días (${nextPaymentDate}). Contacta a soporte para regularizar el servicio.`;
+
+
+    severity =
+      'danger';
+
+  } else if (
+    daysRemaining ===
+    0
+  ) {
+
+    title =
+      'Tu suscripción vence hoy';
+
+
+    message =
+      `Tu renovación está programada para hoy (${nextPaymentDate}). Contacta a soporte para renovar el servicio.`;
+
+
+    severity =
+      'danger';
+
+  } else if (
+    daysRemaining ===
+    1
+  ) {
+
+    title =
+      'Tu suscripción vence mañana';
+
+
+    message =
+      `Tu renovación está programada para mañana (${nextPaymentDate}). Te recomendamos contactar a soporte.`;
+
+  } else {
+
+    title =
+      'Tu suscripción está próxima a renovarse';
+
+
+    message =
+      `Faltan ${daysRemaining} días para tu próxima renovación (${nextPaymentDate}). Te recomendamos contactar a soporte con anticipación.`;
+
+  }
+
+
+  if (
+    manuallyMarked &&
+    daysRemaining >
+      7
+  ) {
+
+    title =
+      'Renovación próxima';
+
+
+    message =
+      `El administrador marcó tu cuenta para renovación. Tu próximo pago está programado para el ${nextPaymentDate}. Contacta a soporte para más información.`;
+
+  }
+
+
+  return {
+
+    active:
+      true,
+
+    title,
+
+    message,
+
+    severity,
+
+    nextPaymentDate,
+
+    daysRemaining,
+
+    manuallyMarked
+
+  };
+
+};
+
+
 const normalizeCloudRole = (
   role
 ) => {
@@ -687,10 +930,10 @@ const authenticateCloudGymUser =
 
         message:
           authError.status === 400
-            ? 'El correo o la contraseña son incorrectos.'
+            ? 'La cuenta no está registrada o las credenciales son incorrectas. Verifica tus datos o contacta a soporte.'
             : (
                 authError.message ||
-                'No se pudo iniciar sesión con Supabase.'
+                'No se pudo iniciar sesión. Intenta nuevamente o contacta a soporte.'
               ),
 
         authError
@@ -856,13 +1099,16 @@ const authenticateCloudGymUser =
           true,
 
         code:
-          'USER_INACTIVE',
+          gymUser.status ===
+          'suspended'
+            ? 'USER_SUSPENDED'
+            : 'USER_INACTIVE',
 
         message:
           gymUser.status ===
           'suspended'
-            ? 'Este usuario se encuentra suspendido.'
-            : 'Este usuario está desactivado.'
+            ? 'Esta cuenta está suspendida. Contacta al administrador o a soporte para recuperar el acceso.'
+            : 'Esta cuenta está desactivada. Contacta al administrador o a soporte si necesitas recuperar el acceso.'
 
       };
 
@@ -1069,7 +1315,7 @@ const authenticateCloudGymUser =
           'GYM_INACTIVE',
 
         message:
-          'El servicio NEXGYM de este gimnasio está desactivado.'
+          'La cuenta de este gimnasio está desactivada. Contacta a soporte para revisar el estado del servicio.'
 
       };
 
@@ -1099,7 +1345,7 @@ const authenticateCloudGymUser =
           'GYM_SUSPENDED',
 
         message:
-          'El servicio NEXGYM de este gimnasio se encuentra suspendido.'
+          'La cuenta de este gimnasio está suspendida temporalmente. Contacta a soporte para conocer el motivo y recuperar el acceso.'
 
       };
 
@@ -1126,6 +1372,13 @@ const authenticateCloudGymUser =
     const now =
       new Date()
         .toISOString();
+
+
+    const renewalNotice =
+      buildRenewalNotice(
+        subscription,
+        gym
+      );
 
 
     // ==================================================
@@ -1158,6 +1411,13 @@ const authenticateCloudGymUser =
         null,
 
       gymStatus,
+
+      renewalNotice,
+
+      subscriptionNextPaymentDate:
+        subscription?.next_payment_date ||
+        gym.subscription_next_payment_date ||
+        null,
 
       name:
         gymUser.name ||
@@ -1244,6 +1504,11 @@ const authenticateCloudGymUser =
       permissions,
 
       gymStatus,
+
+      renewalNotice,
+
+      subscriptionNextPaymentDate:
+        cachedUser.subscriptionNextPaymentDate,
 
       mustChangePassword:
         cachedUser.mustChangePassword,
@@ -1359,7 +1624,9 @@ const authenticateCloudGymUser =
       user:
         cachedUser,
 
-      session
+      session,
+
+      renewalNotice
 
     };
 
@@ -1727,10 +1994,16 @@ export const authenticateGymUser =
             false,
 
           code:
-            'USER_INACTIVE',
+            user.status ===
+            'suspended'
+              ? 'USER_SUSPENDED'
+              : 'USER_INACTIVE',
 
           message:
-            'Este usuario está desactivado.'
+            user.status ===
+            'suspended'
+              ? 'Esta cuenta está suspendida. Contacta al administrador o a soporte para recuperar el acceso.'
+              : 'Esta cuenta está desactivada. Contacta al administrador o a soporte si necesitas recuperar el acceso.'
 
         };
 
@@ -1761,7 +2034,7 @@ export const authenticateGymUser =
             'GYM_SUSPENDED',
 
           message:
-            'El servicio NEXGYM de este gimnasio se encuentra suspendido.'
+            'La cuenta de este gimnasio está suspendida temporalmente. Contacta a soporte para conocer el motivo y recuperar el acceso.'
 
         };
 

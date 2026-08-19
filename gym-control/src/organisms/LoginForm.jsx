@@ -18,7 +18,9 @@ import {
   ArrowRight,
   Shield,
   Eye,
-  EyeOff
+  EyeOff,
+  AlertTriangle,
+  CalendarClock
 } from 'lucide-react';
 
 import Input from '../atoms/Input';
@@ -110,6 +112,54 @@ const hashAdminAccessValue =
 
 
 // ======================================================
+// MENSAJES DE ALERTA DEL LOGIN
+// ======================================================
+
+const getLoginAlertTitle = (
+  code
+) => {
+
+  const titles = {
+
+    USER_SUSPENDED:
+      'Cuenta suspendida',
+
+    USER_INACTIVE:
+      'Cuenta desactivada',
+
+    GYM_SUSPENDED:
+      'Servicio suspendido',
+
+    GYM_INACTIVE:
+      'Servicio desactivado',
+
+    GYM_USER_NOT_LINKED:
+      'Cuenta no registrada',
+
+    USER_NOT_FOUND:
+      'Cuenta no registrada',
+
+    INVALID_CREDENTIALS:
+      'No se pudo iniciar sesión',
+
+    INVALID_PASSWORD:
+      'Contraseña incorrecta',
+
+    EMPTY_FIELDS:
+      'Datos incompletos'
+
+  };
+
+
+  return (
+    titles[code] ||
+    'No se pudo iniciar sesión'
+  );
+
+};
+
+
+// ======================================================
 // LOGIN FORM
 // ======================================================
 
@@ -144,6 +194,24 @@ const LoginForm = () => {
   const [
     error,
     setError
+  ] = useState('');
+
+
+  const [
+    errorCode,
+    setErrorCode
+  ] = useState('');
+
+
+  const [
+    renewalNotice,
+    setRenewalNotice
+  ] = useState(null);
+
+
+  const [
+    pendingDestination,
+    setPendingDestination
   ] = useState('');
 
 
@@ -253,6 +321,10 @@ const LoginForm = () => {
         !password
       ) {
 
+        setErrorCode(
+          'EMPTY_FIELDS'
+        );
+
         setError(
           'Ingresa tu correo y contraseña.'
         );
@@ -265,6 +337,8 @@ const LoginForm = () => {
       try {
 
         setError('');
+
+        setErrorCode('');
 
         setLoading(
           true
@@ -281,6 +355,11 @@ const LoginForm = () => {
         if (
           !result.success
         ) {
+
+          setErrorCode(
+            result.code ||
+            'LOGIN_ERROR'
+          );
 
           setError(
             result.message
@@ -311,10 +390,32 @@ const LoginForm = () => {
         }
 
 
-        navigate(
+        const destination =
           getFirstAllowedRoute(
             result.user
-          ),
+          );
+
+
+        if (
+          result.renewalNotice
+            ?.active
+        ) {
+
+          setPendingDestination(
+            destination
+          );
+
+          setRenewalNotice(
+            result.renewalNotice
+          );
+
+          return;
+
+        }
+
+
+        navigate(
+          destination,
           {
             replace:
               true
@@ -329,8 +430,12 @@ const LoginForm = () => {
         );
 
 
+        setErrorCode(
+          'LOGIN_ERROR'
+        );
+
         setError(
-          'No se pudo iniciar sesión.'
+          'No se pudo iniciar sesión. Intenta nuevamente o contacta a soporte.'
         );
 
       } finally {
@@ -709,6 +814,8 @@ const LoginForm = () => {
 
                   setError('');
 
+                  setErrorCode('');
+
                 }
               }
               type="email"
@@ -734,6 +841,8 @@ const LoginForm = () => {
 
                   setError('');
 
+                  setErrorCode('');
+
                 }
               }
               type="password"
@@ -742,6 +851,76 @@ const LoginForm = () => {
               }
               icon="password"
             />
+
+
+            {
+              error &&
+              (
+
+                <div
+                  className="
+                    mb-5
+                    rounded-2xl
+                    border
+                    border-red-500/20
+                    bg-red-500/[0.07]
+                    px-4
+                    py-4
+                  "
+                >
+
+                  <div className="flex items-start gap-3">
+
+                    <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center flex-shrink-0">
+
+                      <AlertTriangle
+                        className="w-4.5 h-4.5 text-red-400"
+                      />
+
+                    </div>
+
+
+                    <div className="min-w-0">
+
+                      <p className="text-red-300 text-sm font-semibold">
+                        {
+                          getLoginAlertTitle(
+                            errorCode
+                          )
+                        }
+                      </p>
+
+                      <p className="text-red-200/60 text-xs leading-5 mt-1">
+                        {error}
+                      </p>
+
+                      {
+                        [
+                          'USER_SUSPENDED',
+                          'USER_INACTIVE',
+                          'GYM_SUSPENDED',
+                          'GYM_INACTIVE',
+                          'GYM_USER_NOT_LINKED'
+                        ].includes(
+                          errorCode
+                        ) &&
+                        (
+
+                          <p className="text-gray-500 text-[11px] mt-2">
+                            Si consideras que esto es un error, comunícate con soporte NEXGYM.
+                          </p>
+
+                        )
+                      }
+
+                    </div>
+
+                  </div>
+
+                </div>
+
+              )
+            }
 
 
             <div className="flex items-center justify-between gap-4 mt-1 mb-8">
@@ -1329,6 +1508,134 @@ const LoginForm = () => {
                 </div>
 
               </form>
+
+            </div>
+
+          </div>
+
+        )
+      }
+
+
+      {
+        renewalNotice &&
+        (
+
+          <div
+            className="fixed inset-0 z-[180] flex items-center justify-center p-4"
+          >
+
+            <div
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+
+
+            <div
+              className="
+                relative
+                w-full
+                max-w-[470px]
+                overflow-hidden
+                rounded-[26px]
+                border
+                border-yellow-500/20
+                bg-[#0d0f0e]
+                p-6
+                shadow-[0_30px_100px_rgba(0,0,0,0.75)]
+              "
+            >
+
+              <div className="flex items-start gap-4">
+
+                <div
+                  className={`
+                    w-12
+                    h-12
+                    rounded-2xl
+                    border
+                    flex
+                    items-center
+                    justify-center
+                    flex-shrink-0
+                    ${
+                      renewalNotice.severity === 'danger'
+                        ? 'bg-red-500/10 border-red-500/20'
+                        : 'bg-yellow-500/10 border-yellow-500/20'
+                    }
+                  `}
+                >
+
+                  <CalendarClock
+                    className={`w-6 h-6 ${
+                      renewalNotice.severity === 'danger'
+                        ? 'text-red-400'
+                        : 'text-yellow-400'
+                    }`}
+                  />
+
+                </div>
+
+
+                <div>
+
+                  <p className="text-gray-500 text-[11px] uppercase tracking-[0.18em] font-semibold">
+                    Aviso de servicio
+                  </p>
+
+                  <h2 className="text-white text-xl font-bold mt-1">
+                    {renewalNotice.title}
+                  </h2>
+
+                </div>
+
+              </div>
+
+
+              <p className="text-gray-400 text-sm leading-6 mt-5">
+                {renewalNotice.message}
+              </p>
+
+
+              <div className="mt-5 bg-white/[0.025] border border-white/[0.06] rounded-xl p-4">
+
+                <p className="text-gray-500 text-xs">
+                  Este aviso no impide tu acceso mientras la cuenta continúe activa. Puedes seguir utilizando el sistema y realizar la renovación con soporte.
+                </p>
+
+              </div>
+
+
+              <button
+                type="button"
+                onClick={() => {
+
+                  const destination =
+                    pendingDestination ||
+                    '/dashboard';
+
+
+                  setRenewalNotice(
+                    null
+                  );
+
+                  setPendingDestination(
+                    ''
+                  );
+
+
+                  navigate(
+                    destination,
+                    {
+                      replace:
+                        true
+                    }
+                  );
+
+                }}
+                className="mt-6 w-full h-11 rounded-xl bg-[#00ff88] text-black text-sm font-bold hover:bg-[#00e67a] transition"
+              >
+                Entendido, continuar
+              </button>
 
             </div>
 

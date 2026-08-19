@@ -49,8 +49,10 @@ import {
 import {
   deactivateNexgymCloudGym,
   extendNexgymCloudService,
+  clearNexgymCloudRenewalNotice,
   getNexgymCloudActivity,
   getNexgymCloudGymById,
+  markNexgymCloudRenewalNotice,
   reactivateNexgymCloudGym,
   registerNexgymCloudPayment,
   suspendNexgymCloudGym
@@ -266,6 +268,17 @@ const NexgymGymDetailPage = () => {
       ) {
 
         return 'inactive';
+
+      }
+
+
+      if (
+        gym?.access
+          ?.accountStatus ===
+        'suspended'
+      ) {
+
+        return 'suspended';
 
       }
 
@@ -1234,6 +1247,124 @@ const NexgymGymDetailPage = () => {
                     )
                   }
                 />
+
+              </div>
+
+
+              <div className="mt-5 bg-[#0d0d0d] border border-[#242424] rounded-xl p-4">
+
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+
+                  <div className="flex items-start gap-3">
+
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${
+                      status === 'past_due'
+                        ? 'bg-yellow-500/10 border-yellow-500/20'
+                        : 'bg-[#00ff88]/5 border-[#00ff88]/10'
+                    }`}>
+
+                      <AlertTriangle
+                        className={`w-5 h-5 ${
+                          status === 'past_due'
+                            ? 'text-yellow-400'
+                            : 'text-[#00ff88]'
+                        }`}
+                      />
+
+                    </div>
+
+
+                    <div>
+
+                      <p className="text-white text-sm font-semibold">
+                        Aviso de renovación al iniciar sesión
+                      </p>
+
+                      <p className="text-gray-500 text-xs mt-1 max-w-2xl leading-5">
+                        El sistema avisa automáticamente cuando faltan 7 días o menos para el próximo pago. También puedes marcar el aviso manualmente para que aparezca desde el siguiente inicio de sesión.
+                      </p>
+
+                    </div>
+
+                  </div>
+
+
+                  <button
+                    type="button"
+                    disabled={
+                      status === 'suspended' ||
+                      status === 'inactive'
+                    }
+                    onClick={async () => {
+
+                      try {
+
+                        setActionError('');
+
+
+                        const result =
+                          status === 'past_due'
+                            ? await clearNexgymCloudRenewalNotice(
+                                gym.id
+                              )
+                            : await markNexgymCloudRenewalNotice(
+                                gym.id
+                              );
+
+
+                        if (
+                          !result.success
+                        ) {
+
+                          setActionError(
+                            result.message ||
+                            'No se pudo actualizar el aviso de renovación.'
+                          );
+
+                          return;
+
+                        }
+
+
+                        await loadGym();
+
+
+                        showSuccess(
+                          status === 'past_due'
+                            ? 'Aviso manual de renovación retirado.'
+                            : 'Aviso de renovación activado.'
+                        );
+
+                      } catch (error) {
+
+                        console.error(
+                          '❌ Error actualizando aviso de renovación:',
+                          error
+                        );
+
+
+                        setActionError(
+                          error?.message ||
+                          'No se pudo actualizar el aviso de renovación.'
+                        );
+
+                      }
+
+                    }}
+                    className={`h-10 px-4 rounded-xl text-sm font-semibold whitespace-nowrap transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                      status === 'past_due'
+                        ? 'bg-[#171717] border border-[#303030] text-gray-300 hover:text-white'
+                        : 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 hover:bg-yellow-500/15'
+                    }`}
+                  >
+                    {
+                      status === 'past_due'
+                        ? 'Quitar aviso manual'
+                        : 'Avisar próxima renovación'
+                    }
+                  </button>
+
+                </div>
 
               </div>
 
