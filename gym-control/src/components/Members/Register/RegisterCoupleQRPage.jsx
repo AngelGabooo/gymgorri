@@ -737,16 +737,6 @@ const RegisterCoupleQRPage = () => {
       );
 
 
-      // ====================================================
-      // PAGOS: UNO POR PERSONA
-      // ====================================================
-      //
-      // Así Dashboard y Reportes suman correctamente:
-      // $450 + $450 = $900.
-      // Cada miembro conserva su propio pago.
-      //
-      // ====================================================
-
       const payments =
         readLocalArray(
           PAYMENTS_KEY
@@ -931,10 +921,6 @@ const RegisterCoupleQRPage = () => {
       );
 
 
-      // ====================================================
-      // HISTORIAL DE SUSCRIPCIÓN
-      // ====================================================
-
       const history =
         readLocalArray(
           SUBSCRIPTION_HISTORY_KEY
@@ -1045,12 +1031,13 @@ const RegisterCoupleQRPage = () => {
   // ======================================================
   // DESCARGAR CREDENCIAL DIGITAL DE LA PERSONA ACTUAL
   // ======================================================
+  // Ahora usa Canvas puro (credentialGenerator) en lugar
+  // de html2canvas, para que funcione igual en móvil.
 
   const handleDownloadCredential =
     async () => {
 
       if (
-        !credentialRef.current ||
         !currentMember ||
         !currentAccess?.qrGenerated
       ) {
@@ -1063,44 +1050,48 @@ const RegisterCoupleQRPage = () => {
 
       try {
 
-        const html2canvasModule =
-          await import(
-            'html2canvas'
+        const {
+          generateCredentialImage,
+          downloadDataUrl
+        } = await import(
+          '../../../utils/credentialGenerator.js'
+        );
+
+        const qrSvgElement =
+          credentialRef.current?.querySelector('svg');
+
+        if (!qrSvgElement) {
+          throw new Error(
+            'No se encontró el QR de la credencial.'
           );
+        }
 
-        const html2canvas =
-          html2canvasModule.default;
+        const dataUrl =
+          await generateCredentialImage({
+            member: {
+              ...currentMember,
+              accessBlocked: false
+            },
 
+            subscription:
+              currentSubscription || {},
 
-        const canvas =
-          await html2canvas(
-            credentialRef.current,
-            {
-              scale: 3,
-              backgroundColor:
-                null,
-              useCORS:
-                true,
-              allowTaint:
-                true
-            }
-          );
+            gymSettings: {
+              name:
+                settings?.name,
 
+              shortName:
+                settings?.shortName ||
+                settings?.name
+            },
 
-        const link =
-          document.createElement(
-            'a'
-          );
+            qrSvgElement
+          });
 
-        link.download =
-          `Credencial-${currentMember.id}.png`;
-
-        link.href =
-          canvas.toDataURL(
-            'image/png'
-          );
-
-        link.click();
+        downloadDataUrl(
+          dataUrl,
+          `Credencial-${currentMember.id}.png`
+        );
 
         setError('');
 

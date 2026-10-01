@@ -328,23 +328,47 @@ const RegisterQRPage = () => {
     }
 
     if (type === 'Credencial - PNG') {
-      if (!credentialRef.current) return;
 
       try {
-        const html2canvasModule = await import('html2canvas');
-        const html2canvas = html2canvasModule.default;
 
-        const canvas = await html2canvas(credentialRef.current, {
-          scale: 2,
-          backgroundColor: null,
-          useCORS: true,
-          allowTaint: true,
-        });
+        const {
+          generateCredentialImage,
+          downloadDataUrl
+        } = await import(
+          '../../../utils/credentialGenerator.js'
+        );
 
-        const link = document.createElement('a');
-        link.download = `Credencial-${memberId}.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
+        const qrSvgElement =
+          document.querySelector(
+            '#qr-code-container svg'
+          );
+
+        if (!qrSvgElement) {
+          throw new Error('No se encontró el QR.');
+        }
+
+        const dataUrl =
+          await generateCredentialImage({
+            member: {
+              ...memberData,
+              id: memberId,
+              firstName: memberData.firstName,
+              lastName: memberData.lastName,
+              profilePhoto: memberData.profilePhoto,
+              accessBlocked: false
+            },
+            subscription: subscriptionData,
+            gymSettings: {
+              name: settings?.name,
+              shortName: settings?.shortName || settings?.name
+            },
+            qrSvgElement
+          });
+
+        downloadDataUrl(
+          dataUrl,
+          `Credencial-${memberId}.png`
+        );
 
         addCredentialHistoryEvent({
           memberId,
@@ -353,9 +377,14 @@ const RegisterQRPage = () => {
           source: 'registration',
           actor: currentSession
         });
+
       } catch (error) {
+
         console.error('Error descargando credencial:', error);
+        setSaveError('No se pudo descargar la credencial.');
+
       }
+
     }
   };
 
@@ -363,51 +392,113 @@ const RegisterQRPage = () => {
   // IMPRESIÓN
   // ======================================================
 
-  const printCredential = () => {
-    const printContent = document.getElementById('credential-print');
-    if (!printContent) return;
+  const printCredential = async () => {
 
-    const win = window.open('', '_blank');
-    if (!win) return;
+    const printWindow =
+      window.open(
+        '',
+        '_blank',
+        'width=700,height=900'
+      );
 
-    win.document.write(`
-      <html>
-        <head>
-          <title>Credencial ${memberId}</title>
-          <style>
-            body {
-              margin: 0;
-              padding: 20px;
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              min-height: 100vh;
-              background: white;
-              font-family: Arial, sans-serif;
-            }
-          </style>
-        </head>
-        <body>
-          ${printContent.outerHTML}
-          <script>
-            window.onload = function () {
-              window.print();
-              window.close();
-            };
-          <\/script>
-        </body>
-      </html>
-    `);
+    if (!printWindow) {
+      setSaveError('El navegador bloqueó la ventana de impresión.');
+      return;
+    }
 
-    win.document.close();
+    try {
 
-    addCredentialHistoryEvent({
-      memberId,
-      memberName: fullName,
-      action: 'credential_printed',
-      source: 'registration',
-      actor: currentSession
-    });
+      const {
+        generateCredentialImage
+      } = await import(
+        '../../../utils/credentialGenerator.js'
+      );
+
+      const qrSvgElement =
+        document.querySelector(
+          '#qr-code-container svg'
+        );
+
+      if (!qrSvgElement) {
+        throw new Error('No se encontró el QR.');
+      }
+
+      const dataUrl =
+        await generateCredentialImage({
+          member: {
+            ...memberData,
+            id: memberId,
+            firstName: memberData.firstName,
+            lastName: memberData.lastName,
+            profilePhoto: memberData.profilePhoto,
+            accessBlocked: false
+          },
+          subscription: subscriptionData,
+          gymSettings: {
+            name: settings?.name,
+            shortName: settings?.shortName || settings?.name
+          },
+          qrSvgElement
+        });
+
+      printWindow.document.write(`
+        <!doctype html>
+        <html>
+          <head>
+            <title>Credencial ${memberId}</title>
+            <style>
+              * { box-sizing: border-box; }
+              @page { size: auto; margin: 12mm; }
+              body {
+                margin: 0;
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+                background: #ffffff;
+              }
+              img {
+                width: 100%;
+                max-width: 384px;
+                height: auto;
+                display: block;
+              }
+              @media print {
+                body { padding: 0; }
+              }
+            </style>
+          </head>
+          <body>
+            <img src="${dataUrl}" alt="Credencial ${memberId}" />
+            <script>
+              window.onload = function () {
+                window.print();
+                window.close();
+              };
+            <\/script>
+          </body>
+        </html>
+      `);
+
+      printWindow.document.close();
+
+      addCredentialHistoryEvent({
+        memberId,
+        memberName: fullName,
+        action: 'credential_printed',
+        source: 'registration',
+        actor: currentSession
+      });
+
+    } catch (error) {
+
+      console.error('Error imprimiendo credencial:', error);
+      printWindow.close();
+      setSaveError('No se pudo imprimir la credencial.');
+
+    }
+
   };
 
   // ======================================================
@@ -485,38 +576,13 @@ const RegisterQRPage = () => {
           now,
       };
 
-      // ====================================================
-      // GUARDAR MIEMBRO
-      // ====================================================
-
       saveMember(finalMember);
-
-      // ====================================================
-      // REGISTRAR AUTOMÁTICAMENTE EL PAGO INICIAL
-      // ====================================================
-      //
-      // El pago viene desde el Paso 2.
-      // No se vuelve a capturar manualmente en Pagos.
-      //
-      // EFECTIVO:
-      //   amount = costo del plan
-      //   receivedAmount = efectivo recibido
-      //   change = cambio calculado
-      //
-      // TARJETA / TRANSFERENCIA / OTRO:
-      //   amount = costo del plan
-      //   receivedAmount = costo del plan
-      //   change = 0
-      //
-      // ====================================================
 
       const payments =
         readLocalArray(
           PAYMENTS_KEY
         );
 
-      // Evitar duplicar el pago si por alguna razón
-      // el usuario presiona Finalizar más de una vez.
       const existingInitialPayment =
         payments.find(
           payment =>
@@ -732,10 +798,6 @@ const RegisterQRPage = () => {
       }
 
 
-      // ====================================================
-      // HISTORIAL DE SUSCRIPCIÓN INICIAL
-      // ====================================================
-
       const history =
         readLocalArray(
           SUBSCRIPTION_HISTORY_KEY
@@ -829,10 +891,6 @@ const RegisterQRPage = () => {
 
       }
 
-
-      // ====================================================
-      // RESPALDAR PAGO + SUSCRIPCIÓN EN INDEXEDDB
-      // ====================================================
 
       void mirrorBillingOperationOffline({
 

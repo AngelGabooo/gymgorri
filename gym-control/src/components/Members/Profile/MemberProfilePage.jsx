@@ -80,8 +80,6 @@ const ATTENDANCE_KEY = 'gym_control_attendance';
 // ======================================================
 // STORAGE DE PAGOS E HISTORIAL DE SUSCRIPCIONES
 // ======================================================
-// Se agregan sin modificar las funciones de asistencias,
-// WhatsApp, QR, bloqueo ni edición del perfil.
 
 const PAYMENTS_KEY = 'gym_control_payments';
 const SUBSCRIPTION_HISTORY_KEY = 'gym_control_subscription_history';
@@ -168,9 +166,6 @@ const formatAttendanceMethod = (method) => {
 // ======================================================
 // FECHAS DE SUSCRIPCIÓN
 // ======================================================
-// Acepta tanto ISO como formatos usados por el sistema:
-// 15 sep 2026, 15 sept 2026, 15 septiembre 2026,
-// 15 oct 2026, etc.
 
 const SUBSCRIPTION_MONTHS = {
   ene: 0,
@@ -203,7 +198,6 @@ const SUBSCRIPTION_MONTHS = {
 const parseSubscriptionDate = (value) => {
   if (!value) return null;
 
-  // YYYY-MM-DD se interpreta de forma local para evitar desfases por UTC.
   const isoDateOnly = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
 
   if (isoDateOnly) {
@@ -704,16 +698,6 @@ const MemberProfilePage = () => {
   // ======================================================
   // DÍAS RESTANTES
   // ======================================================
-  //
-  // Respeta la duración comercial configurada del plan.
-  //
-  // Ejemplo:
-  // inicio: 18 ago
-  // plan mensual: 30 días
-  // vencimiento: 18 sep, 11:59 p. m.
-  // al registrarse muestra: 30 días restantes
-  //
-  // ======================================================
 
   const daysRemaining =
     getSubscriptionDaysRemaining({
@@ -789,8 +773,6 @@ const MemberProfilePage = () => {
   // ======================================================
   // CARGAR PAGOS E HISTORIAL DE SUSCRIPCIONES
   // ======================================================
-  // Esto se suma a la carga de asistencias existente. No se elimina
-  // ni modifica ninguna de las funciones anteriores.
 
   useEffect(() => {
     const loadMemberFinancialData = () => {
@@ -816,7 +798,6 @@ const MemberProfilePage = () => {
           return {
             ...item,
 
-            // Campos que ya consume renderPagosTab y Resumen.
             date: paymentDate
               ? new Intl.DateTimeFormat('es-MX', {
                   day: '2-digit',
@@ -871,8 +852,6 @@ const MemberProfilePage = () => {
           item?.member?.id === memberId
         )
         .map(item => {
-          // Las renovaciones pueden guardar la suscripción dentro
-          // de item.subscription, mientras otros registros la guardan plana.
           const storedSubscription = item.subscription || item;
 
           const startDate =
@@ -1025,7 +1004,6 @@ const MemberProfilePage = () => {
   ) || null;
 
   // Datos del QR
-  // Debe coincidir con el formato generado durante el registro.
   const qrData = JSON.stringify({
     type: 'GYM_ACCESS_V2',
     memberId: memberId,
@@ -1962,74 +1940,77 @@ const MemberProfilePage = () => {
     };
 
 
+  // ======================================================
+  // DESCARGAR CREDENCIAL (CANVAS PURO, SIN html2canvas)
+  // ======================================================
+
   const handleDownloadCredential =
     async () => {
 
       if (
-        !credentialRef.current
+        !memberData?.access?.qr?.enabled ||
+        !memberData?.access?.qr?.token
       ) {
 
         window.alert(
-          'No se encontró la credencial digital.'
+          'El miembro no tiene QR habilitado.'
         );
 
         return;
 
       }
 
-
       try {
 
-        const html2canvasModule =
-          await import(
-            'html2canvas'
+        const {
+          generateCredentialImage,
+          downloadDataUrl
+        } = await import(
+          '../../../utils/credentialGenerator.js'
+        );
+
+        const qrSvgElement =
+          document.querySelector(
+            `[data-download-member-qr="${memberId}"] svg`
           );
 
-        const html2canvas =
-          html2canvasModule.default;
+        if (!qrSvgElement) {
 
-
-        const canvas =
-          await html2canvas(
-            credentialRef.current,
-            {
-              scale:
-                3,
-
-              backgroundColor:
-                null,
-
-              useCORS:
-                true,
-
-              allowTaint:
-                true
-            }
+          throw new Error(
+            'No se encontró el QR del miembro.'
           );
 
+        }
 
-        const link =
-          document.createElement(
-            'a'
-          );
+        const dataUrl =
+          await generateCredentialImage({
+            member:
+              memberData,
 
-        link.download =
-          `Credencial-${memberId}.png`;
+            subscription:
+              subscriptionData,
 
-        link.href =
-          canvas.toDataURL(
-            'image/png'
-          );
+            gymSettings: {
+              name:
+                currentSession?.gymName,
 
-        link.click();
+              shortName:
+                currentSession?.gymName
+            },
 
-            registerCredentialEvent(
-              'qr_downloaded'
-            );
+            qrSvgElement
+          });
 
-      } catch (
-        error
-      ) {
+        downloadDataUrl(
+          dataUrl,
+          `Credencial-${sanitizeFileName(fullName)}-${memberId}.png`
+        );
+
+        registerCredentialEvent(
+          'credential_downloaded'
+        );
+
+      } catch (error) {
 
         console.error(
           'Error descargando credencial:',
@@ -2045,21 +2026,25 @@ const MemberProfilePage = () => {
     };
 
 
+  // ======================================================
+  // IMPRIMIR CREDENCIAL (CANVAS PURO, SIN html2canvas)
+  // ======================================================
+
   const handlePrintCredential =
     async () => {
 
       if (
-        !credentialRef.current
+        !memberData?.access?.qr?.enabled ||
+        !memberData?.access?.qr?.token
       ) {
 
         window.alert(
-          'No se encontró la credencial digital.'
+          'El miembro no tiene QR habilitado.'
         );
 
         return;
 
       }
-
 
       const printWindow =
         window.open(
@@ -2068,10 +2053,7 @@ const MemberProfilePage = () => {
           'width=700,height=900'
         );
 
-
-      if (
-        !printWindow
-      ) {
+      if (!printWindow) {
 
         window.alert(
           'El navegador bloqueó la ventana de impresión.'
@@ -2081,63 +2063,54 @@ const MemberProfilePage = () => {
 
       }
 
-
       try {
 
-        const html2canvasModule =
-          await import(
-            'html2canvas'
+        const {
+          generateCredentialImage
+        } = await import(
+          '../../../utils/credentialGenerator.js'
+        );
+
+        const qrSvgElement =
+          document.querySelector(
+            `[data-download-member-qr="${memberId}"] svg`
           );
 
-        const html2canvas =
-          html2canvasModule.default;
+        if (!qrSvgElement) {
 
-
-        const canvas =
-          await html2canvas(
-            credentialRef.current,
-            {
-              scale:
-                3,
-
-              backgroundColor:
-                null,
-
-              useCORS:
-                true,
-
-              allowTaint:
-                true
-            }
+          throw new Error(
+            'No se encontró el QR del miembro.'
           );
 
+        }
 
-        const image =
-          canvas.toDataURL(
-            'image/png'
-          );
+        const dataUrl =
+          await generateCredentialImage({
+            member:
+              memberData,
 
+            subscription:
+              subscriptionData,
+
+            gymSettings: {
+              name:
+                currentSession?.gymName,
+
+              shortName:
+                currentSession?.gymName
+            },
+
+            qrSvgElement
+          });
 
         printWindow.document.write(`
           <!doctype html>
           <html>
             <head>
-
-              <title>
-                Credencial ${memberId}
-              </title>
-
+              <title>Credencial ${memberId}</title>
               <style>
-
-                * {
-                  box-sizing: border-box;
-                }
-
-                @page {
-                  size: auto;
-                  margin: 12mm;
-                }
-
+                * { box-sizing: border-box; }
+                @page { size: auto; margin: 12mm; }
                 body {
                   margin: 0;
                   min-height: 100vh;
@@ -2147,51 +2120,28 @@ const MemberProfilePage = () => {
                   padding: 20px;
                   background: #ffffff;
                 }
-
                 img {
                   width: 100%;
                   max-width: 384px;
                   height: auto;
                   display: block;
                 }
-
                 @media print {
-
-                  body {
-                    padding: 0;
-                  }
-
+                  body { padding: 0; }
                 }
-
               </style>
-
             </head>
-
             <body>
-
-              <img
-                src="${image}"
-                alt="Credencial ${memberId}"
-              />
-
+              <img src="${dataUrl}" alt="Credencial ${memberId}" />
               <script>
-
-                window.onload =
-                  function () {
-
-                    window.print();
-
-                    window.close();
-
-                  };
-
+                window.onload = function () {
+                  window.print();
+                  window.close();
+                };
               <\/script>
-
             </body>
-
           </html>
         `);
-
 
         printWindow.document.close();
 
@@ -2199,9 +2149,7 @@ const MemberProfilePage = () => {
           'credential_printed'
         );
 
-      } catch (
-        error
-      ) {
+      } catch (error) {
 
         console.error(
           'Error imprimiendo credencial:',
@@ -3553,12 +3501,10 @@ const MemberProfilePage = () => {
   // Funciones para acciones del menú
   const handleRegisterEntry = () => {
     window.alert('Registrando entrada manual...');
-    // Aquí iría la lógica para registrar entrada
   };
 
   const handleRegisterExit = () => {
     window.alert('Registrando salida manual...');
-    // Aquí iría la lógica para registrar salida
   };
 
   const handleBlockAccess = () => {
