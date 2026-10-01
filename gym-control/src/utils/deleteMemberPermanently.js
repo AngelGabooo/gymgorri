@@ -11,6 +11,15 @@ import {
   addMemberToBlacklist
 } from '../services/blacklistService';
 
+import db, {
+  openNexgymDatabase
+} from '../offline/db/nexgymDatabase.js';
+
+import {
+  addToSyncQueue,
+  SYNC_OPERATIONS
+} from '../offline/sync/syncQueue.js';
+
 
 // ======================================================
 // CLAVES RELACIONADAS
@@ -261,6 +270,175 @@ const shouldDeleteRelatedRecord = (
 
 
 // ======================================================
+// ELIMINAR DE INDEXEDDB (OFFLINE)
+// ======================================================
+//
+// IMPORTANTE:
+//
+// Sin esto, el pull puede "revivir" al miembro porque
+// el registro sigue existiendo en IndexedDB y el
+// hydrate lo vuelve a copiar a localStorage.
+//
+// ======================================================
+
+const deleteMemberFromIndexedDB =
+  async (
+    gymId,
+    memberId
+  ) => {
+
+    if (!gymId || !memberId) {
+
+      return;
+
+    }
+
+
+    try {
+
+      await openNexgymDatabase();
+
+
+      // ==================================================
+      // BORRAR MIEMBRO
+      // ==================================================
+
+      await db.members.delete([
+        String(gymId),
+        String(memberId)
+      ]);
+
+
+      // ==================================================
+      // BORRAR REGISTROS RELACIONADOS
+      // ==================================================
+
+      await db.memberSubscriptions
+        .where({
+          gymId: String(gymId),
+          memberId: String(memberId)
+        })
+        .delete();
+
+
+      await db.memberPayments
+        .where({
+          gymId: String(gymId),
+          memberId: String(memberId)
+        })
+        .delete();
+
+
+      await db.attendance
+        .where({
+          gymId: String(gymId),
+          memberId: String(memberId)
+        })
+        .delete();
+
+
+      await db.accessLogs
+        .where({
+          gymId: String(gymId),
+          memberId: String(memberId)
+        })
+        .delete();
+
+
+      console.log(
+        '🗑️ Miembro y registros relacionados borrados de IndexedDB:',
+        {
+          gymId,
+          memberId
+        }
+      );
+
+    } catch (error) {
+
+      // No bloqueamos la eliminación si IndexedDB falla.
+      // El DELETE en Supabase y la limpieza de localStorage
+      // ya se hicieron.
+
+      console.error(
+        '❌ No se pudo borrar el miembro de IndexedDB:',
+        error
+      );
+
+    }
+
+  };
+
+
+// ======================================================
+// ENCOLAR DELETE EN SYNCQUEUE
+// ======================================================
+//
+// Esto hace que el DELETE llegue a Supabase.
+// Sin esto, el miembro se borra localmente pero
+// reaparece al recargar porque el pull lo trae de nuevo.
+//
+// ======================================================
+
+const enqueueMemberDelete =
+  async (
+    gymId,
+    memberId
+  ) => {
+
+    if (!gymId || !memberId) {
+
+      return;
+
+    }
+
+
+    try {
+
+      await addToSyncQueue({
+
+        gymId,
+
+        entity:
+          'member',
+
+        entityId:
+          String(memberId),
+
+        operation:
+          SYNC_OPERATIONS.DELETE,
+
+        payload:
+          null,
+
+        metadata: {
+          reason:
+            'permanent_delete'
+        }
+
+      });
+
+
+      console.log(
+        '📥 DELETE encolado en syncQueue:',
+        {
+          gymId,
+          memberId
+        }
+      );
+
+    } catch (error) {
+
+      console.error(
+        '❌ No se pudo encolar el DELETE del miembro:',
+        error
+      );
+
+    }
+
+  };
+
+
+// ======================================================
 // ELIMINAR MIEMBRO
 // ======================================================
 
@@ -441,7 +619,7 @@ export const deleteMemberPermanently = (
 
 
   // ====================================================
-  // ELIMINAR REGISTROS RELACIONADOS
+  // ELIMINAR REGISTROS RELACIONADOS DE LOCALSTORAGE
   // ====================================================
 
   RELATED_ARRAY_KEYS.forEach(
@@ -585,6 +763,45 @@ export const deleteMemberPermanently = (
 
 
   // ====================================================
+  // ELIMINAR DE INDEXEDDB (OFFLINE)
+  // ====================================================
+  //
+  // No hacemos await porque la firma actual es síncrona
+  // (varias pantallas la llaman sin await).
+  //
+  // IndexedDB y syncQueue se actualizan en paralelo.
+  //
+  // ====================================================
+
+  const resolvedGymId =
+    gymId ||
+    member?.gymId ||
+    null;
+
+
+  if (resolvedGymId) {
+
+    void deleteMemberFromIndexedDB(
+      resolvedGymId,
+      memberId
+    );
+
+
+    void enqueueMemberDelete(
+      resolvedGymId,
+      memberId
+    );
+
+  } else {
+
+    console.warn(
+      '⚠️ Miembro eliminado en modo legacy (sin gymId). No se tocó IndexedDB ni syncQueue.'
+    );
+
+  }
+
+
+  // ====================================================
   // NO TOCAR CONTADORES
   // ====================================================
   //
@@ -624,9 +841,7 @@ export const deleteMemberPermanently = (
       true,
 
     gymId:
-      gymId ||
-      member?.gymId ||
-      null,
+      resolvedGymId,
 
     memberId,
 

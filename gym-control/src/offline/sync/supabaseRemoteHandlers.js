@@ -3709,6 +3709,39 @@ const pullEntityFromSupabase = async (entity, gymId) => {
 
   await openNexgymDatabase();
 
+  // ==================================================
+  // NUEVO: Obtener IDs con operaciones pendientes
+  // ==================================================
+  // Si hay un DELETE pendiente para un entityId, NO
+  // lo traemos de Supabase aunque exista remotamente.
+  //
+
+  const pendingItems = await db.syncQueue
+    .where('[gymId+status]')
+    .equals([String(gymId), 'pending'])
+    .filter((item) => item.entity === entity)
+    .toArray();
+
+  const processingItems = await db.syncQueue
+    .where('[gymId+status]')
+    .equals([String(gymId), 'processing'])
+    .filter((item) => item.entity === entity)
+    .toArray();
+
+  const pendingDeletes = new Set();
+  const pendingOthers = new Set();
+
+  for (const item of [...pendingItems, ...processingItems]) {
+    const id = String(item.entityId || '');
+    if (!id) continue;
+
+    if (item.operation === 'delete') {
+      pendingDeletes.add(id);
+    } else {
+      pendingOthers.add(id);
+    }
+  }
+
   // 1. Traer TODO lo remoto de este gimnasio
   const { data, error } = await supabase
     .from(remoteTable)
@@ -3719,11 +3752,31 @@ const pullEntityFromSupabase = async (entity, gymId) => {
 
   const rows = Array.isArray(data) ? data : [];
 
-  if (rows.length === 0) {
-    return { entity, pulled: 0, inserted: 0, updated: 0, skippedLocal: 0 };
+  // 2. Filtrar deletes pendientes
+  const filteredRows = rows.filter((row) => {
+    const localId = String(row.local_id || '');
+    if (!localId) return true;
+
+    if (pendingDeletes.has(localId)) {
+      // Hay un DELETE pendiente: NO traer de remoto.
+      return false;
+    }
+
+    return true;
+  });
+
+  if (filteredRows.length === 0) {
+    return {
+      entity,
+      pulled: rows.length,
+      inserted: 0,
+      updated: 0,
+      skippedLocal: 0,
+      skippedPendingDeletes: rows.length - filteredRows.length
+    };
   }
 
-  // 2. Traer TODOS los locales de este gimnasio
+  // 3. Traer TODOS los locales de este gimnasio
   const localRows = await db[localTable]
     .where('gymId')
     .equals(gymId)
@@ -3733,21 +3786,26 @@ const pullEntityFromSupabase = async (entity, gymId) => {
     localRows.map((row) => [String(row.id), row])
   );
 
-  // 3. Merge: no sobreescribir cambios locales pendientes
+  // 4. Merge: no sobreescribir cambios locales pendientes
   let inserted = 0;
   let updated = 0;
   let skippedLocal = 0;
 
   const toPut = [];
 
-  for (const remote of rows) {
+  for (const remote of filteredRows) {
     const mapped = mapper(remote);
     if (!mapped?.id) continue;
 
     const local = localById.get(String(mapped.id));
 
     if (local && local.syncStatus && local.syncStatus !== 'synced') {
-      // Hay cambios locales pendientes: NO pisar.
+      skippedLocal += 1;
+      continue;
+    }
+
+    if (pendingOthers.has(String(mapped.id))) {
+      // Hay un update/create pendiente: no pisar
       skippedLocal += 1;
       continue;
     }
@@ -3763,10 +3821,17 @@ const pullEntityFromSupabase = async (entity, gymId) => {
   }
 
   console.log(
-    `📥 Pull ${entity}: ${rows.length} remotos → ${inserted} nuevos, ${updated} actualizados, ${skippedLocal} locales pendientes preservados.`
+    `📥 Pull ${entity}: ${rows.length} remotos → ${inserted} nuevos, ${updated} actualizados, ${skippedLocal} locales pendientes preservados, ${rows.length - filteredRows.length} deletes pendientes omitidos.`
   );
 
-  return { entity, pulled: rows.length, inserted, updated, skippedLocal };
+  return {
+    entity,
+    pulled: rows.length,
+    inserted,
+    updated,
+    skippedLocal,
+    skippedPendingDeletes: rows.length - filteredRows.length
+  };
 };
 
 

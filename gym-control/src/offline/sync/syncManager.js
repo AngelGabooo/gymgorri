@@ -1341,12 +1341,12 @@ const handleNetworkStatusChange =
 
 
     // 1. Primero bajamos cambios remotos
-    await pullFromSupabase({ gymId });
-
-    // 2. Luego subimos pendientes locales
-    await synchronizePendingItems({
+  await synchronizePendingItems({
       gymId
     });
+    // 2. Luego subimos pendientes locales
+      await pullFromSupabase({ gymId });
+
 
   };
 
@@ -1460,13 +1460,14 @@ export const initializeSyncManager =
         gymId
       ) {
 
-        // 1. Primero bajamos cambios remotos
-        await pullFromSupabase({ gymId });
-
-        // 2. Luego subimos pendientes locales
+        // 1. Primero subimos cambios locales pendientes
+        //    (incluye DELETEs)
         await synchronizePendingItems({
           gymId
         });
+
+        // 2. Luego bajamos cambios remotos
+        await pullFromSupabase({ gymId });
 
       } else {
 
