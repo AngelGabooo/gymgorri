@@ -294,6 +294,12 @@ const Sidebar = ({
 
     <>
 
+      {/* ================================================= */}
+      {/* BOTÓN HAMBURGUESA (MÓVIL) */}
+      {/* Safe-area: respeta el notch / Dynamic Island y    */}
+      {/* el borde izquierdo en landscape.                  */}
+      {/* ================================================= */}
+
       <button
         onClick={() =>
           setIsMobileOpen(
@@ -301,7 +307,13 @@ const Sidebar = ({
               !previous
           )
         }
-        className="lg:hidden fixed top-4 left-4 z-50 bg-[#1a1a1a] p-3 rounded-xl border border-[#2a2a2a]"
+        style={{
+          top:
+            'calc(1rem + env(safe-area-inset-top, 0px))',
+          left:
+            'calc(1rem + env(safe-area-inset-left, 0px))'
+        }}
+        className="lg:hidden fixed z-50 bg-[#1a1a1a] p-3 rounded-xl border border-[#2a2a2a]"
       >
         {
           isMobileOpen
@@ -338,7 +350,21 @@ const Sidebar = ({
       }
 
 
+      {/* ================================================= */}
+      {/* PANEL SIDEBAR                                     */}
+      {/* Safe-area: padding interno para que el logo y el  */}
+      {/* menú no se peguen a la barra de estado de iOS.    */}
+      {/* ================================================= */}
+
       <div
+        style={{
+          paddingTop:
+            'env(safe-area-inset-top, 0px)',
+          paddingBottom:
+            'env(safe-area-inset-bottom, 0px)',
+          paddingLeft:
+            'env(safe-area-inset-left, 0px)'
+        }}
         className={`
           fixed
           lg:static

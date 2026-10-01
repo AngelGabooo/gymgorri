@@ -1124,6 +1124,10 @@ const Header = ({
       ref={
         headerRef
       }
+      style={{
+        paddingTop:
+          'env(safe-area-inset-top, 0px)'
+      }}
       className="
         relative
         z-30
