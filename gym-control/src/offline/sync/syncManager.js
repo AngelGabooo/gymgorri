@@ -130,6 +130,9 @@ let initialized =
 let syncing =
   false;
 
+let pulling =
+  false;
+
 let unsubscribeNetwork =
   null;
 
@@ -160,6 +163,9 @@ let syncManagerState = {
   syncing:
     false,
 
+  pulling:
+    false,
+
   activeGymId:
     null,
 
@@ -170,6 +176,15 @@ let syncManagerState = {
     null,
 
   lastSyncError:
+    null,
+
+  lastPullStartedAt:
+    null,
+
+  lastPullCompletedAt:
+    null,
+
+  lastPullError:
     null,
 
   processed:
@@ -1065,6 +1080,76 @@ export const synchronizePendingItems =
 
 
 // ======================================================
+// PULL DESDE SUPABASE
+// ======================================================
+
+export const pullFromSupabase = async (options = {}) => {
+  const requestedGymId = options?.gymId ? String(options.gymId) : null;
+  const activeGymId = requestedGymId || getCurrentGymId();
+
+  if (pulling) {
+    return { success: false, reason: 'already_pulling' };
+  }
+
+  if (!isOnline()) {
+    console.log('📴 Pull omitido: sin conexión.');
+    return { success: false, reason: 'offline' };
+  }
+
+  if (!activeGymId) {
+    console.log('🔐 Pull omitido: sin gimnasio autenticado.');
+    return { success: false, reason: 'no_active_gym' };
+  }
+
+  // Import dinámico para evitar dependencia circular
+  const { pullAllFromSupabase } = await import('./supabaseRemoteHandlers.js');
+
+  pulling = true;
+
+  syncManagerState = {
+    ...syncManagerState,
+    pulling: true,
+    activeGymId,
+    lastPullStartedAt: new Date().toISOString(),
+    lastPullError: null
+  };
+
+  await dispatchSyncManagerUpdate();
+
+  try {
+    const result = await pullAllFromSupabase(activeGymId);
+
+    syncManagerState = {
+      ...syncManagerState,
+      pulling: false,
+      lastPullCompletedAt: new Date().toISOString()
+    };
+
+    await dispatchSyncManagerUpdate();
+
+    console.log('✅ Pull completado:', result);
+
+    return result;
+  } catch (error) {
+    console.error('❌ Error en pull:', error);
+
+    syncManagerState = {
+      ...syncManagerState,
+      pulling: false,
+      lastPullError: error instanceof Error ? error.message : String(error),
+      lastPullCompletedAt: new Date().toISOString()
+    };
+
+    await dispatchSyncManagerUpdate();
+
+    return { success: false, error };
+  } finally {
+    pulling = false;
+  }
+};
+
+
+// ======================================================
 // FALLIDOS
 // ======================================================
 //
@@ -1248,13 +1333,17 @@ const handleNetworkStatusChange =
 
 
     console.log(
-      '🌐 Internet recuperado. Revisando operaciones pendientes...',
+      '🌐 Internet recuperado. Sincronizando...',
       {
         gymId
       }
     );
 
 
+    // 1. Primero bajamos cambios remotos
+    await pullFromSupabase({ gymId });
+
+    // 2. Luego subimos pendientes locales
     await synchronizePendingItems({
       gymId
     });
@@ -1371,6 +1460,10 @@ export const initializeSyncManager =
         gymId
       ) {
 
+        // 1. Primero bajamos cambios remotos
+        await pullFromSupabase({ gymId });
+
+        // 2. Luego subimos pendientes locales
         await synchronizePendingItems({
           gymId
         });
@@ -1448,6 +1541,9 @@ export const destroySyncManager =
     syncing =
       false;
 
+    pulling =
+      false;
+
 
     syncManagerState = {
 
@@ -1457,6 +1553,9 @@ export const destroySyncManager =
         false,
 
       syncing:
+        false,
+
+      pulling:
         false,
 
       activeGymId:
@@ -1538,6 +1637,9 @@ const syncManager = {
 
   synchronizeFailed:
     synchronizeFailedItems,
+
+  pull:
+    pullFromSupabase,
 
   registerHandler:
     registerSyncHandler,

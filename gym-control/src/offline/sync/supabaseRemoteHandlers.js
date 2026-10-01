@@ -3539,6 +3539,369 @@ const syncSale =
 
 
 // ======================================================
+// PULL (DESCARGA) DESDE SUPABASE
+// ======================================================
+//
+// Trae registros de Supabase y los escribe en IndexedDB
+// con syncStatus: 'synced'.
+//
+// Estrategia: "remote wins" para registros synced,
+// pero NO sobreescribe registros locales con cambios
+// pendientes (syncStatus !== 'synced').
+//
+// ======================================================
+
+const LOCAL_TABLES_FOR_PULL = {
+  member: 'members',
+  payment: 'memberPayments',
+  subscription_history: 'memberSubscriptions',
+  attendance: 'attendance',
+  access_log: 'accessLogs',
+  product: 'products',
+  inventory_movement: 'inventoryMovements',
+  cash_shift: 'cashShifts',
+  cash_movement: 'cashMovements',
+  sale: 'sales'
+};
+
+
+const REMOTE_TABLES_FOR_PULL = {
+  member: 'members',
+  payment: 'member_payments',
+  subscription_history: 'member_subscriptions',
+  attendance: 'attendance',
+  access_log: 'access_logs',
+  product: 'products',
+  inventory_movement: 'inventory_movements',
+  cash_shift: 'cash_shifts',
+  cash_movement: 'cash_movements',
+  sale: 'sales'
+};
+
+
+// ======================================================
+// MAPEAR FILA REMOTA -> REGISTRO LOCAL
+// ======================================================
+
+const mapRemoteMemberToLocal = (row) => ({
+  id: row.local_id,
+  gymId: row.gym_id,
+  firstName: row.first_name,
+  lastName: row.last_name,
+  fullName: row.full_name,
+  phone: row.phone,
+  email: row.email,
+  birthDate: row.birth_date,
+  gender: row.gender,
+  address: row.address,
+  emergencyContact: row.emergency_contact,
+  profilePhoto: row.profile_photo,
+  registrationCategory: row.registration_category,
+  status: row.status || 'active',
+  accessBlocked: row.access_blocked === true,
+  isInside: row.is_inside === true,
+  notes: row.notes,
+  access: row.access || {},
+  subscription: row.subscription || {},
+  registrationDate: row.source_created_at,
+  createdAt: row.source_created_at,
+  updatedAt: row.source_updated_at,
+  syncStatus: 'synced',
+  remoteId: row.id
+});
+
+
+const mapRemotePaymentToLocal = (row) => ({
+  id: row.local_id,
+  gymId: row.gym_id,
+  memberId: row.member_local_id,
+  subscriptionId: row.metadata?.subscriptionLocalId || null,
+  amount: Number(row.amount || 0),
+  paymentMethod: row.payment_method,
+  method: row.payment_method,
+  reference: row.reference,
+  status: row.status === 'paid' ? 'completed' : row.status,
+  notes: row.notes,
+  concept: row.metadata?.concept || null,
+  type: row.metadata?.type || null,
+  source: row.metadata?.source || null,
+  plan: row.metadata?.plan || null,
+  planLabel: row.metadata?.planLabel || null,
+  days: row.metadata?.days ?? null,
+  period: row.metadata?.period || null,
+  originalAmount: row.metadata?.originalAmount ?? null,
+  discountAmount: row.metadata?.discountAmount ?? null,
+  promotion: row.metadata?.promotion || null,
+  receivedAmount: row.metadata?.receivedAmount ?? null,
+  change: row.metadata?.change ?? null,
+  currency: row.metadata?.currency || null,
+  cashShiftId: row.cash_shift_local_id || null,
+  date: row.source_created_at,
+  createdAt: row.source_created_at,
+  updatedAt: row.source_updated_at,
+  syncStatus: 'synced',
+  remoteId: row.id
+});
+
+
+const mapRemoteSubscriptionToLocal = (row) => ({
+  id: row.local_id,
+  gymId: row.gym_id,
+  memberId: row.metadata?.memberLocalId || null,
+  planName: row.plan_name,
+  plan: row.plan_name,
+  planLabel: row.plan_name,
+  status: row.status,
+  startDate: row.start_date,
+  endDate: row.end_date,
+  originalAmount: Number(row.amount || 0),
+  discountAmount: Number(row.discount || 0),
+  finalAmount: Number(row.final_amount || 0),
+  paymentMethod: row.payment_method,
+  promotion: row.metadata?.promotion || null,
+  notes: row.metadata?.notes || null,
+  type: row.metadata?.historyType || null,
+  source: row.metadata?.historySource || null,
+  paymentId: row.metadata?.paymentId || null,
+  previousSubscription: row.metadata?.previousSubscription || null,
+  createdAt: row.source_created_at,
+  updatedAt: row.source_updated_at,
+  syncStatus: 'synced',
+  remoteId: row.id
+});
+
+
+const mapRemoteGeneric = (entity) => (row) => ({
+  id: row.local_id,
+  gymId: row.gym_id,
+  ...row,
+  syncStatus: 'synced',
+  remoteId: row.id
+});
+
+
+const REMOTE_MAPPERS = {
+  member: mapRemoteMemberToLocal,
+  payment: mapRemotePaymentToLocal,
+  subscription_history: mapRemoteSubscriptionToLocal,
+  attendance: mapRemoteGeneric('attendance'),
+  access_log: mapRemoteGeneric('access_log'),
+  product: mapRemoteGeneric('product'),
+  inventory_movement: mapRemoteGeneric('inventory_movement'),
+  cash_shift: mapRemoteGeneric('cash_shift'),
+  cash_movement: mapRemoteGeneric('cash_movement'),
+  sale: mapRemoteGeneric('sale')
+};
+
+
+// ======================================================
+// PULL DE UNA ENTIDAD
+// ======================================================
+
+const pullEntityFromSupabase = async (entity, gymId) => {
+  const remoteTable = REMOTE_TABLES_FOR_PULL[entity];
+  const localTable = LOCAL_TABLES_FOR_PULL[entity];
+  const mapper = REMOTE_MAPPERS[entity];
+
+  if (!remoteTable || !localTable || !mapper) {
+    return { entity, skipped: true, reason: 'no_mapping' };
+  }
+
+  await openNexgymDatabase();
+
+  // 1. Traer TODO lo remoto de este gimnasio
+  const { data, error } = await supabase
+    .from(remoteTable)
+    .select('*')
+    .eq('gym_id', gymId);
+
+  throwSupabaseError(error, `pull ${remoteTable}`);
+
+  const rows = Array.isArray(data) ? data : [];
+
+  if (rows.length === 0) {
+    return { entity, pulled: 0, inserted: 0, updated: 0, skippedLocal: 0 };
+  }
+
+  // 2. Traer TODOS los locales de este gimnasio
+  const localRows = await db[localTable]
+    .where('gymId')
+    .equals(gymId)
+    .toArray();
+
+  const localById = new Map(
+    localRows.map((row) => [String(row.id), row])
+  );
+
+  // 3. Merge: no sobreescribir cambios locales pendientes
+  let inserted = 0;
+  let updated = 0;
+  let skippedLocal = 0;
+
+  const toPut = [];
+
+  for (const remote of rows) {
+    const mapped = mapper(remote);
+    if (!mapped?.id) continue;
+
+    const local = localById.get(String(mapped.id));
+
+    if (local && local.syncStatus && local.syncStatus !== 'synced') {
+      // Hay cambios locales pendientes: NO pisar.
+      skippedLocal += 1;
+      continue;
+    }
+
+    toPut.push(mapped);
+
+    if (local) updated += 1;
+    else inserted += 1;
+  }
+
+  if (toPut.length > 0) {
+    await db[localTable].bulkPut(toPut);
+  }
+
+  console.log(
+    `📥 Pull ${entity}: ${rows.length} remotos → ${inserted} nuevos, ${updated} actualizados, ${skippedLocal} locales pendientes preservados.`
+  );
+
+  return { entity, pulled: rows.length, inserted, updated, skippedLocal };
+};
+
+
+// ======================================================
+// HIDRATAR LOCALSTORAGE DESDE INDEXEDDB
+// ======================================================
+//
+// El Dashboard lee de localStorage (getStoredMembers).
+// Aquí copiamos los miembros desde IndexedDB a localStorage
+// para que las pantallas existentes sigan funcionando.
+//
+// ======================================================
+
+const hydrateLocalStorageFromIndexedDB = async (gymId) => {
+  await openNexgymDatabase();
+
+  // ----- MIEMBROS -----
+  const members = await db.members
+    .where('gymId')
+    .equals(gymId)
+    .toArray();
+
+  const ALL_MEMBERS_KEY = 'gym_control_members';
+  let currentAllMembers = [];
+  try {
+    const raw = localStorage.getItem(ALL_MEMBERS_KEY);
+    currentAllMembers = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(currentAllMembers)) currentAllMembers = [];
+  } catch {
+    currentAllMembers = [];
+  }
+
+  const otherGymsMembers = currentAllMembers.filter(
+    (m) => String(m?.gymId || '') !== String(gymId)
+  );
+
+  const mergedMembers = [...otherGymsMembers, ...members];
+
+  localStorage.setItem(ALL_MEMBERS_KEY, JSON.stringify(mergedMembers));
+
+  // ----- PAGOS -----
+  const PAYMENTS_KEY = 'gym_control_payments';
+  const payments = await db.memberPayments
+    .where('gymId')
+    .equals(gymId)
+    .toArray();
+
+  let currentAllPayments = [];
+  try {
+    const raw = localStorage.getItem(PAYMENTS_KEY);
+    currentAllPayments = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(currentAllPayments)) currentAllPayments = [];
+  } catch {
+    currentAllPayments = [];
+  }
+
+  const otherGymsPayments = currentAllPayments.filter(
+    (p) => String(p?.gymId || '') !== String(gymId)
+  );
+
+  const mergedPayments = [...otherGymsPayments, ...payments];
+  localStorage.setItem(PAYMENTS_KEY, JSON.stringify(mergedPayments));
+
+  // ----- ASISTENCIA -----
+  const ATTENDANCE_KEY = 'gym_control_attendance';
+  const attendance = await db.attendance
+    .where('gymId')
+    .equals(gymId)
+    .toArray();
+
+  let currentAllAttendance = [];
+  try {
+    const raw = localStorage.getItem(ATTENDANCE_KEY);
+    currentAllAttendance = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(currentAllAttendance)) currentAllAttendance = [];
+  } catch {
+    currentAllAttendance = [];
+  }
+
+  const otherGymsAttendance = currentAllAttendance.filter(
+    (a) => String(a?.gymId || '') !== String(gymId)
+  );
+
+  const mergedAttendance = [...otherGymsAttendance, ...attendance];
+  localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(mergedAttendance));
+
+  console.log(
+    `💾 LocalStorage hidratado para gym ${gymId}:`,
+    {
+      members: members.length,
+      payments: payments.length,
+      attendance: attendance.length
+    }
+  );
+};
+
+
+// ======================================================
+// PULL GLOBAL DE TODAS LAS ENTIDADES
+// ======================================================
+
+export const pullAllFromSupabase = async (gymId) => {
+  const cleanGymId = asText(gymId);
+  if (!cleanGymId) {
+    return { success: false, reason: 'no_gym_id' };
+  }
+
+  await validateAuthenticatedGym(cleanGymId);
+
+  const results = [];
+
+  for (const entity of SUPABASE_SYNC_ENTITIES) {
+    try {
+      const result = await pullEntityFromSupabase(entity, cleanGymId);
+      results.push(result);
+    } catch (error) {
+      console.error(`❌ Pull ${entity} falló:`, error);
+      results.push({ entity, error: error?.message || String(error) });
+    }
+  }
+
+  // Refrescar localStorage desde IndexedDB para que el Dashboard vea los datos
+  await hydrateLocalStorageFromIndexedDB(cleanGymId);
+
+  window.dispatchEvent(new Event('gym-storage-update'));
+
+  return {
+    success: true,
+    gymId: cleanGymId,
+    results
+  };
+};
+
+
+// ======================================================
 // REGISTRAR HANDLERS
 // ======================================================
 
@@ -3658,6 +4021,9 @@ export default {
     registerSupabaseRemoteHandlers,
 
   entities:
-    SUPABASE_SYNC_ENTITIES
+    SUPABASE_SYNC_ENTITIES,
+
+  pullAll:
+    pullAllFromSupabase
 
 };

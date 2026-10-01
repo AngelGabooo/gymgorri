@@ -20,7 +20,8 @@ import {
   Eye,
   EyeOff,
   AlertTriangle,
-  CalendarClock
+  CalendarClock,
+  MessageCircle
 } from 'lucide-react';
 
 import Input from '../atoms/Input';
@@ -154,6 +155,37 @@ const getLoginAlertTitle = (
   return (
     titles[code] ||
     'No se pudo iniciar sesión'
+  );
+
+};
+
+
+// ======================================================
+// SOPORTE WHATSAPP
+// ======================================================
+
+const WHATSAPP_SUPPORT_NUMBER =
+  '528144384806';
+
+
+const shouldShowWhatsAppSupport = (
+  code
+) => {
+
+  return [
+    'USER_SUSPENDED',
+    'USER_INACTIVE',
+    'GYM_SUSPENDED',
+    'GYM_INACTIVE',
+    'GYM_USER_NOT_LINKED',
+    'USER_NOT_FOUND',
+    'INVALID_CREDENTIALS',
+    'SUPABASE_AUTH_ERROR',
+    'GYM_QUERY_ERROR',
+    'GYM_NOT_FOUND',
+    'LOGIN_ERROR'
+  ].includes(
+    code
   );
 
 };
@@ -895,20 +927,55 @@ const LoginForm = () => {
                       </p>
 
                       {
-                        [
-                          'USER_SUSPENDED',
-                          'USER_INACTIVE',
-                          'GYM_SUSPENDED',
-                          'GYM_INACTIVE',
-                          'GYM_USER_NOT_LINKED'
-                        ].includes(
+                        shouldShowWhatsAppSupport(
                           errorCode
                         ) &&
                         (
 
-                          <p className="text-gray-500 text-[11px] mt-2">
-                            Si consideras que esto es un error, comunícate con soporte NEXGYM.
-                          </p>
+                          <>
+
+                            <p className="text-gray-500 text-[11px] mt-2">
+                              Si necesitas ayuda, comunícate directamente con soporte NEXGYM.
+                            </p>
+
+
+                            <a
+                              href={`https://wa.me/${WHATSAPP_SUPPORT_NUMBER}?text=${encodeURIComponent(
+                                `Hola, necesito ayuda con mi acceso a NEXGYM. Mi correo es ${email.trim() || 'no especificado'}. El sistema muestra: ${error}`
+                              )}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="
+                                mt-3
+                                inline-flex
+                                items-center
+                                justify-center
+                                gap-2
+                                min-h-10
+                                rounded-xl
+                                border
+                                border-[#25D366]/25
+                                bg-[#25D366]/10
+                                px-4
+                                text-xs
+                                font-semibold
+                                text-[#57e88b]
+                                transition
+                                hover:border-[#25D366]/45
+                                hover:bg-[#25D366]/15
+                                hover:text-[#7ff0a7]
+                              "
+                            >
+
+                              <MessageCircle
+                                className="w-4 h-4"
+                              />
+
+                              Contactar soporte por WhatsApp
+
+                            </a>
+
+                          </>
 
                         )
                       }

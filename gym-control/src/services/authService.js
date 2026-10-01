@@ -217,7 +217,6 @@ export const normalizePermissions = (
   permissions
 ) => {
 
-  // Dueño y administrador tienen acceso completo.
   if (
     role === 'owner' ||
     role === 'admin'
@@ -505,23 +504,8 @@ const normalizeUserGymData = (
 };
 
 
-
-// ======================================================
-// NORMALIZAR ROL DE SUPABASE
-// ======================================================
-
-
 // ======================================================
 // AVISO DE RENOVACIÓN
-// ======================================================
-//
-// No requiere columnas nuevas en Supabase.
-// Se activa cuando:
-//
-// 1. La suscripción está marcada como "past_due".
-// 2. Faltan 7 días o menos para next_payment_date.
-// 3. La fecha de pago ya venció.
-//
 // ======================================================
 
 const buildRenewalNotice = (
@@ -753,6 +737,10 @@ const buildRenewalNotice = (
 };
 
 
+// ======================================================
+// NORMALIZAR ROL DE SUPABASE
+// ======================================================
+
 const normalizeCloudRole = (
   role
 ) => {
@@ -784,15 +772,6 @@ const normalizeCloudRole = (
 
 // ======================================================
 // GUARDAR / ACTUALIZAR USUARIO CLOUD EN CACHE LOCAL
-// ======================================================
-//
-// El resto de GYM CONTROL todavía utiliza getGymUsers()
-// de manera síncrona.
-//
-// Por eso conservamos una copia local del usuario de
-// Supabase. Supabase sigue siendo la fuente de verdad
-// para autenticación y vínculo con el gimnasio.
-//
 // ======================================================
 
 const cacheCloudGymUser = (
@@ -955,6 +934,7 @@ const authenticateCloudGymUser =
       await supabase.auth
         .signOut();
 
+
       return {
 
         success:
@@ -978,12 +958,37 @@ const authenticateCloudGymUser =
     // 2. VÍNCULO GYM_USERS
     // ==================================================
 
+    const gymUserSelect =
+      `
+        id,
+        user_id,
+        gym_id,
+        name,
+        email,
+        role,
+        status,
+        permissions,
+        must_change_password,
+        last_access_at,
+        created_at,
+        updated_at
+      `;
+
+
+    let gymUser =
+      null;
+
+
+    // ==================================================
+    // BUSCAR PRIMERO POR USER_ID
+    // ==================================================
+
     const {
       data:
-        gymUser,
+        gymUserById,
 
       error:
-        gymUserError
+        gymUserByIdError
     } =
       await supabase
 
@@ -992,20 +997,7 @@ const authenticateCloudGymUser =
         )
 
         .select(
-          `
-            id,
-            user_id,
-            gym_id,
-            name,
-            email,
-            role,
-            status,
-            permissions,
-            must_change_password,
-            last_access_at,
-            created_at,
-            updated_at
-          `
+          gymUserSelect
         )
 
         .eq(
@@ -1017,37 +1009,221 @@ const authenticateCloudGymUser =
 
 
     if (
-      gymUserError
+      gymUserByIdError
     ) {
 
       console.error(
-        '❌ Error consultando gym_users:',
-        gymUserError
+        '❌ Error consultando gym_users por user_id:',
+        gymUserByIdError
       );
 
+    } else if (
+      gymUserById?.id &&
+      gymUserById?.gym_id
+    ) {
 
-      await supabase.auth
-        .signOut();
-
-
-      return {
-
-        success:
-          false,
-
-        cloudAttempted:
-          true,
-
-        code:
-          'GYM_USER_QUERY_ERROR',
-
-        message:
-          'No se pudo comprobar la autorización de esta cuenta.'
-
-      };
+      gymUser =
+        gymUserById;
 
     }
 
+
+    // ==================================================
+    // RECUPERACIÓN POR CORREO
+    // ==================================================
+
+    if (
+      !gymUser?.id ||
+      !gymUser?.gym_id
+    ) {
+
+      const authenticatedEmail =
+        String(
+          authUser.email ||
+          normalizedEmail ||
+          ''
+        )
+          .trim()
+          .toLowerCase();
+
+
+      if (
+        authenticatedEmail
+      ) {
+
+        const {
+          data:
+            gymUsersByEmail,
+
+          error:
+            gymUserEmailError
+        } =
+          await supabase
+
+            .from(
+              'gym_users'
+            )
+
+            .select(
+              gymUserSelect
+            )
+
+            .ilike(
+              'email',
+              authenticatedEmail
+            )
+
+            .order(
+              'updated_at',
+              {
+                ascending:
+                  false,
+                nullsFirst:
+                  false
+              }
+            )
+
+            .limit(
+              1
+            );
+
+
+        if (
+          gymUserEmailError
+        ) {
+
+          console.error(
+            '❌ Error consultando gym_users por correo:',
+            gymUserEmailError
+          );
+
+        } else {
+
+          const recoveredGymUser =
+            Array.isArray(
+              gymUsersByEmail
+            )
+              ? gymUsersByEmail[0] || null
+              : null;
+
+
+          if (
+            recoveredGymUser?.id &&
+            recoveredGymUser?.gym_id
+          ) {
+
+            gymUser =
+              recoveredGymUser;
+
+
+            console.warn(
+              '⚠️ Vínculo gym_users recuperado por correo:',
+              {
+                gymUserId:
+                  recoveredGymUser.id,
+
+                previousUserId:
+                  recoveredGymUser.user_id ||
+                  null,
+
+                authUserId:
+                  authUser.id,
+
+                email:
+                  authenticatedEmail
+              }
+            );
+
+
+            // ==================================================
+            // REPARAR USER_ID
+            // ==================================================
+
+            if (
+              recoveredGymUser.user_id !==
+              authUser.id
+            ) {
+
+              const {
+                data:
+                  repairedGymUser,
+
+                error:
+                  repairError
+              } =
+                await supabase
+
+                  .from(
+                    'gym_users'
+                  )
+
+                  .update({
+
+                    user_id:
+                      authUser.id,
+
+                    updated_at:
+                      new Date()
+                        .toISOString()
+
+                  })
+
+                  .eq(
+                    'id',
+                    recoveredGymUser.id
+                  )
+
+                  .select(
+                    gymUserSelect
+                  )
+
+                  .maybeSingle();
+
+
+              if (
+                repairError
+              ) {
+
+                console.warn(
+                  '⚠️ Se encontró el gimnasio por correo, pero no se pudo reparar user_id:',
+                  repairError
+                );
+
+              } else if (
+                repairedGymUser?.id
+              ) {
+
+                gymUser =
+                  repairedGymUser;
+
+
+                console.log(
+                  '✅ Vínculo gym_users reparado correctamente:',
+                  {
+                    gymUserId:
+                      repairedGymUser.id,
+
+                    authUserId:
+                      authUser.id
+                  }
+                );
+
+              }
+
+            }
+
+          }
+
+        }
+
+      }
+
+    }
+
+
+    // ==================================================
+    // NO TIENE GIMNASIO VINCULADO
+    // ==================================================
 
     if (
       !gymUser?.id ||
@@ -1070,7 +1246,7 @@ const authenticateCloudGymUser =
           'GYM_USER_NOT_LINKED',
 
         message:
-          'Este correo no está vinculado a ningún gimnasio.'
+          'La cuenta fue autenticada, pero todavía no tiene un gimnasio vinculado. Contacta a soporte NEXGYM.'
 
       };
 
@@ -1296,7 +1472,7 @@ const authenticateCloudGymUser =
 
     if (
       gym.status ===
-        'inactive'
+      'inactive'
     ) {
 
       await supabase.auth
@@ -1531,7 +1707,47 @@ const authenticateCloudGymUser =
         session
       )
     );
+    // ==================================================
+    // 9.5. PULL INICIAL DESDE SUPABASE
+    // ==================================================
+    //
+    // Descarga los datos del gimnasio desde Supabase
+    // hacia IndexedDB + localStorage para que el
+    // Dashboard y demás pantallas los vean.
+    //
+    // No bloqueamos el login si falla.
+    //
+    // ==================================================
 
+    try {
+
+      const {
+        pullFromSupabase
+      } = await import(
+        '../offline/sync/syncManager.js'
+      );
+
+
+      await pullFromSupabase({
+        gymId:
+          gym.id
+      });
+
+
+      console.log(
+        '✅ Datos descargados de Supabase tras login.'
+      );
+
+    } catch (
+      pullError
+    ) {
+
+      console.warn(
+        '⚠️ No se pudo hacer el pull inicial tras login:',
+        pullError
+      );
+
+    }
 
     // ==================================================
     // 10. LAST ACCESS EN SUPABASE
@@ -1572,7 +1788,6 @@ const authenticateCloudGymUser =
     }
 
 
-    // Cache local anterior.
     updateNexgymLastConnection(
       gym.id,
       now
@@ -1596,6 +1811,7 @@ const authenticateCloudGymUser =
     console.log(
       '✅ Usuario de gimnasio autenticado con Supabase:',
       {
+
         userId:
           authUser.id,
 
@@ -1609,6 +1825,7 @@ const authenticateCloudGymUser =
           gym.gym_code,
 
         role
+
       }
     );
 
@@ -1636,14 +1853,6 @@ const authenticateCloudGymUser =
 // ======================================================
 // ASEGURAR USUARIO PRINCIPAL
 // ======================================================
-//
-// Esta cuenta únicamente se crea para mantener
-// compatibilidad con instalaciones anteriores.
-//
-// Los gimnasios creados desde NEXGYM tendrán su propio
-// usuario owner con gymId.
-//
-// ======================================================
 
 export const ensureDefaultOwnerUser =
   async () => {
@@ -1651,10 +1860,6 @@ export const ensureDefaultOwnerUser =
     const users =
       getGymUsers();
 
-
-    // ==================================================
-    // YA EXISTEN USUARIOS
-    // ==================================================
 
     if (
       Array.isArray(
@@ -1737,7 +1942,9 @@ export const ensureDefaultOwnerUser =
         );
 
 
-      if (changed) {
+      if (
+        changed
+      ) {
 
         saveGymUsers(
           normalized
@@ -1750,10 +1957,6 @@ export const ensureDefaultOwnerUser =
 
     }
 
-
-    // ==================================================
-    // CUENTA LEGACY
-    // ==================================================
 
     const now =
       new Date()
@@ -1884,16 +2087,7 @@ export const authenticateGymUser =
 
 
       // ==================================================
-      // 1. INTENTAR SUPABASE PRIMERO
-      // ==================================================
-      //
-      // Las cuentas creadas desde NEXGYM viven en:
-      //
-      // auth.users
-      // gym_users
-      //
-      // Por eso Supabase debe ser la primera fuente.
-      //
+      // 1. INTENTAR SUPABASE
       // ==================================================
 
       const cloudResult =
@@ -1914,14 +2108,6 @@ export const authenticateGymUser =
 
       // ==================================================
       // 2. COMPATIBILIDAD LEGACY
-      // ==================================================
-      //
-      // Solo intentamos el sistema local si realmente
-      // existe ese correo en getGymUsers().
-      //
-      // Esto conserva instalaciones anteriores sin impedir
-      // el acceso a las cuentas nuevas de Supabase.
-      //
       // ==================================================
 
       const users =
@@ -2042,7 +2228,7 @@ export const authenticateGymUser =
 
 
       // ==================================================
-      // PASSWORD LOCAL LEGACY
+      // PASSWORD LOCAL
       // ==================================================
 
       const passwordHash =
@@ -2270,11 +2456,6 @@ export const logoutGymUser =
     );
 
 
-    // Cerrar también la sesión Supabase si existe.
-    //
-    // No hacemos await porque esta función se utiliza
-    // síncronamente en varias partes de la aplicación.
-
     supabase.auth
       .signOut()
       .catch(
@@ -2481,7 +2662,9 @@ export const getCurrentSession =
 
       return session;
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
         'Error obteniendo sesión:',
@@ -2911,10 +3094,6 @@ export const refreshCurrentSession =
       };
 
 
-      // ==================================================
-      // SINCRONIZAR USUARIO
-      // ==================================================
-
       const updatedUser = {
 
         ...user,
@@ -2963,7 +3142,9 @@ export const refreshCurrentSession =
 
       return updatedSession;
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
         'Error refrescando sesión:',
@@ -3143,7 +3324,6 @@ export const changeCurrentUserPassword =
           'supabase'
       ) {
 
-        // Primero validamos la contraseña actual.
         const {
           error:
             signInError
