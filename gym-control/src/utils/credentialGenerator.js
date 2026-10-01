@@ -530,20 +530,350 @@ export const generateCredentialImage = async ({
 
 
 // ======================================================
-// DESCARGAR DATA URL
+// DATA URL -> BLOB
 // ======================================================
 
-export const downloadDataUrl = (
-  dataUrl,
-  fileName
+export const dataUrlToBlob = (
+  dataUrl
 ) => {
 
-  const link = document.createElement('a');
-  link.href = dataUrl;
-  link.download = fileName;
+  const [header, base64] = String(dataUrl || '').split(',');
 
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
+  if (!base64) {
+    throw new Error('Data URL inválida.');
+  }
+
+  const mimeMatch = header.match(/data:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return new Blob([bytes], { type: mime });
+
+};
+
+
+// ======================================================
+// DETECTAR iOS / iPadOS
+// ======================================================
+
+const isIOS = () => {
+
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  const ua = navigator.userAgent || '';
+
+  // iPhone / iPad / iPod clásico
+  if (/iPad|iPhone|iPod/.test(ua)) {
+    return true;
+  }
+
+  // iPad moderno (iPadOS 13+) se reporta como MacIntel con touch
+  if (
+    navigator.platform === 'MacIntel' &&
+    typeof navigator.maxTouchPoints === 'number' &&
+    navigator.maxTouchPoints > 1
+  ) {
+    return true;
+  }
+
+  return false;
+
+};
+
+
+// ======================================================
+// DETECTAR SAFARI (cualquier plataforma)
+// ======================================================
+
+const isSafari = () => {
+
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  const ua = navigator.userAgent || '';
+
+  // Safari real: tiene Safari y NO tiene otros motores
+  return (
+    /Safari/.test(ua) &&
+    !/Chrome|CriOS|FxiOS|EdgiOS|OPiOS|Android/.test(ua)
+  );
+
+};
+
+
+// ======================================================
+// COMPARTIR CON WEB SHARE API (iOS nativo)
+// ======================================================
+
+const shareDataUrlWithNativeSheet = async (
+  dataUrl,
+  fileName,
+  title = 'Credencial digital'
+) => {
+
+  if (
+    typeof navigator === 'undefined' ||
+    typeof navigator.share !== 'function'
+  ) {
+    return false;
+  }
+
+  try {
+
+    const blob = dataUrlToBlob(dataUrl);
+
+    const file = new File(
+      [blob],
+      fileName,
+      { type: 'image/png' }
+    );
+
+    // Si el navegador soporta canShare, validamos primero
+    if (
+      typeof navigator.canShare === 'function'
+    ) {
+
+      const canShareFiles =
+        navigator.canShare({
+          files: [file]
+        });
+
+      if (!canShareFiles) {
+
+        // Intentar compartir solo con la URL
+        await navigator.share({
+          title,
+          text: 'Credencial digital',
+          url: dataUrl
+        });
+
+        return true;
+
+      }
+
+    }
+
+    await navigator.share({
+      title,
+      files: [file]
+    });
+
+    return true;
+
+  } catch (error) {
+
+    // El usuario canceló o no hay permiso: no es error crítico
+    if (
+      error?.name === 'AbortError' ||
+      error?.name === 'NotAllowedError'
+    ) {
+      return true;
+    }
+
+    console.warn(
+      'Web Share API falló, se usará fallback:',
+      error
+    );
+
+    return false;
+
+  }
+
+};
+
+
+// ======================================================
+// ABRIR IMAGEN EN PESTAÑA NUEVA (fallback iOS/Safari)
+// ======================================================
+
+const openDataUrlInNewTab = (
+  dataUrl
+) => {
+
+  try {
+
+    const win = window.open('', '_blank');
+
+    if (!win) {
+      return false;
+    }
+
+    win.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Credencial</title>
+          <style>
+            html, body {
+              margin: 0;
+              padding: 0;
+              background: #0a0a0a;
+              min-height: 100vh;
+            }
+            body {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 16px;
+            }
+            .wrap {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              max-width: 100%;
+            }
+            img {
+              max-width: 100%;
+              height: auto;
+              display: block;
+              border-radius: 16px;
+              box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            }
+            .hint {
+              color: #00ff88;
+              font-family: -apple-system, system-ui, sans-serif;
+              font-size: 13px;
+              text-align: center;
+              margin-top: 14px;
+              padding: 0 12px;
+              line-height: 1.4;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="wrap">
+            <img src="${dataUrl}" alt="Credencial" />
+            <p class="hint">
+              Mantén presionada la imagen para guardarla en Fotos,
+              o toca el botón Compartir de Safari.
+            </p>
+          </div>
+        </body>
+      </html>
+    `);
+
+    win.document.close();
+
+    return true;
+
+  } catch (error) {
+
+    console.error(
+      'No se pudo abrir la credencial en pestaña nueva:',
+      error
+    );
+
+    return false;
+
+  }
+
+};
+
+
+// ======================================================
+// DESCARGAR DATA URL (con soporte iOS/Safari)
+// ======================================================
+
+export const downloadDataUrl = async (
+  dataUrl,
+  fileName,
+  options = {}
+) => {
+
+  const title =
+    options.title ||
+    'Credencial digital';
+
+  // ==================================================
+  // 1. iOS / iPadOS -> Web Share API primero
+  // ==================================================
+
+  if (isIOS()) {
+
+    const shared =
+      await shareDataUrlWithNativeSheet(
+        dataUrl,
+        fileName,
+        title
+      );
+
+    if (shared) {
+      return true;
+    }
+
+    // Fallback: pestaña nueva
+    const opened =
+      openDataUrlInNewTab(dataUrl);
+
+    if (opened) {
+      return true;
+    }
+
+    // Último recurso: descarga clásica
+  }
+
+  // ==================================================
+  // 2. Safari macOS -> pestaña nueva
+  // ==================================================
+  //
+  // Safari en Mac muchas veces ignora `download` con
+  // data URLs largas. La pestaña nueva siempre funciona.
+  //
+  // ==================================================
+
+  if (isSafari() && !isIOS()) {
+
+    const opened =
+      openDataUrlInNewTab(dataUrl);
+
+    if (opened) {
+      return true;
+    }
+
+  }
+
+  // ==================================================
+  // 3. Otros navegadores -> descarga clásica
+  // ==================================================
+
+  try {
+
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = fileName;
+    link.rel = 'noopener';
+    link.style.display = 'none';
+
+    document.body.appendChild(link);
+    link.click();
+
+    setTimeout(() => {
+      link.remove();
+    }, 100);
+
+    return true;
+
+  } catch (error) {
+
+    console.error(
+      'No se pudo descargar el archivo:',
+      error
+    );
+
+    // Último recurso absoluto
+    return openDataUrlInNewTab(dataUrl);
+
+  }
 
 };
