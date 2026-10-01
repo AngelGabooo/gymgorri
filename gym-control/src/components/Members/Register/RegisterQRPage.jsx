@@ -279,20 +279,34 @@ const RegisterQRPage = () => {
   // DESCARGA QR / CREDENCIAL
   // ======================================================
 
-  const downloadSvgAsPng = () => {
+  const downloadSvgAsPng = async () => {
     const svg = document.querySelector('#qr-code-container svg');
     if (!svg) return;
 
-    const serializer = new XMLSerializer();
-    const source = serializer.serializeToString(svg);
-    const blob = new Blob([source], {
-      type: 'image/svg+xml;charset=utf-8',
-    });
+    try {
+      const serializer = new XMLSerializer();
+      let source = serializer.serializeToString(svg);
 
-    const url = URL.createObjectURL(blob);
-    const image = new window.Image();
+      if (!source.includes('xmlns=')) {
+        source = source.replace(
+          '<svg',
+          '<svg xmlns="http://www.w3.org/2000/svg"'
+        );
+      }
 
-    image.onload = () => {
+      const blob = new Blob([source], {
+        type: 'image/svg+xml;charset=utf-8',
+      });
+
+      const url = URL.createObjectURL(blob);
+
+      const image = await new Promise((resolve, reject) => {
+        const img = new window.Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('No se pudo cargar el SVG.'));
+        img.src = url;
+      });
+
       const canvas = document.createElement('canvas');
       canvas.width = 512;
       canvas.height = 512;
@@ -302,10 +316,25 @@ const RegisterQRPage = () => {
       context.fillRect(0, 0, canvas.width, canvas.height);
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-      const link = document.createElement('a');
-      link.download = `QR-${memberId}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+      URL.revokeObjectURL(url);
+
+      const dataUrl = canvas.toDataURL('image/png');
+
+      // ==================================================
+      // USAR DESCARGA COMPATIBLE CON iOS / SAFARI
+      // ==================================================
+
+      const { downloadDataUrl } = await import(
+        '../../../utils/credentialGenerator.js'
+      );
+
+      await downloadDataUrl(
+        dataUrl,
+        `QR-${memberId}.png`,
+        {
+          title: `Código QR ${memberId}`
+        }
+      );
 
       addCredentialHistoryEvent({
         memberId,
@@ -315,15 +344,15 @@ const RegisterQRPage = () => {
         actor: currentSession
       });
 
-      URL.revokeObjectURL(url);
-    };
-
-    image.src = url;
+    } catch (error) {
+      console.error('Error descargando QR:', error);
+      setSaveError('No se pudo descargar el código QR.');
+    }
   };
 
   const handleDownload = async (type) => {
     if (type === 'QR - PNG') {
-      downloadSvgAsPng();
+      await downloadSvgAsPng();
       return;
     }
 
@@ -365,9 +394,12 @@ const RegisterQRPage = () => {
             qrSvgElement
           });
 
-        downloadDataUrl(
+        await downloadDataUrl(
           dataUrl,
-          `Credencial-${memberId}.png`
+          `Credencial-${memberId}.png`,
+          {
+            title: `Credencial ${memberId}`
+          }
         );
 
         addCredentialHistoryEvent({
@@ -980,10 +1012,20 @@ const RegisterQRPage = () => {
         allowTaint: true
       });
 
-      const link = document.createElement('a');
-      link.download = `Ticket-${lastPayment?.id || memberId}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+      const dataUrl = canvas.toDataURL('image/png');
+
+      const { downloadDataUrl } = await import(
+        '../../../utils/credentialGenerator.js'
+      );
+
+      await downloadDataUrl(
+        dataUrl,
+        `Ticket-${lastPayment?.id || memberId}.png`,
+        {
+          title: `Ticket ${lastPayment?.id || memberId}`
+        }
+      );
+
     } catch (error) {
       console.error('Error descargando ticket:', error);
       setSaveError('No se pudo descargar el ticket.');
